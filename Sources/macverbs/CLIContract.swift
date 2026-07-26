@@ -78,17 +78,21 @@ enum GlobalFlags {
 // MARK: - Stdio helpers
 
 enum CLIOutput {
+    /// Injectable for tests; defaults to process stdio.
+    /// CLI is single-threaded at the entrypoint; tests redirect serially.
+    nonisolated(unsafe) static var standardOutput: FileHandle = .standardOutput
+    nonisolated(unsafe) static var standardError: FileHandle = .standardError
+
     /// Write a domain/system error line to stderr (`error: …`).
     static func writeError(_ message: String) {
         let line = "error: \(message)\n"
-        if let data = line.data(using: .utf8) {
-            try? FileHandle.standardError.write(contentsOf: data)
-        }
+        write(line, to: standardError)
     }
 
     /// Write human text to stdout.
     static func writeText(_ text: String) {
-        print(text)
+        let line = text.hasSuffix("\n") ? text : text + "\n"
+        write(line, to: standardOutput)
     }
 
     /// Write one JSON value to stdout (pretty-printed, stable key order).
@@ -96,9 +100,9 @@ enum CLIOutput {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         let data = try encoder.encode(value)
-        try FileHandle.standardOutput.write(contentsOf: data)
+        try standardOutput.write(contentsOf: data)
         if let newline = "\n".data(using: .utf8) {
-            try FileHandle.standardOutput.write(contentsOf: newline)
+            try standardOutput.write(contentsOf: newline)
         }
     }
 
@@ -108,6 +112,12 @@ enum CLIOutput {
             try writeJSON(value)
         } else {
             writeText(text(value))
+        }
+    }
+
+    private static func write(_ string: String, to handle: FileHandle) {
+        if let data = string.data(using: .utf8) {
+            try? handle.write(contentsOf: data)
         }
     }
 }

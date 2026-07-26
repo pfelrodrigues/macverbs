@@ -75,14 +75,29 @@ import Testing
     #expect(code == ExitCodes.success)
 }
 
-@Test func domainErrorMapsThroughAppRun() throws {
-    // Simulate a verb throwing MacverbsError by exercising the catch path
-    // via a dedicated internal helper would require a subcommand; unit-test
-    // the error type + write path contract instead.
-    let err = MacverbsError.domain("list Work not found")
-    #expect(err.processExitCode == 1)
-    #expect(err.message == "list Work not found")
-    #expect(String(describing: err) == "list Work not found")
+@Test func domainErrorThroughAppReturns1AndStderr() throws {
+    try withRedirectedStdio { pipes in
+        let code = MacverbsApp.runCatching {
+            throw MacverbsError.domain("list Work not found")
+        }
+        #expect(code == ExitCodes.domain)
+        let err = try pipes.readError()
+        #expect(err.contains("error: list Work not found"))
+        let out = try pipes.readOutput()
+        #expect(out.isEmpty)
+    }
+}
+
+@Test func systemErrorThroughAppReturns2AndStderr() throws {
+    try withRedirectedStdio { pipes in
+        let code = MacverbsApp.runCatching {
+            throw MacverbsError.system("EventKit unavailable")
+        }
+        #expect(code == ExitCodes.system)
+        let err = try pipes.readError()
+        #expect(err.contains("error: EventKit unavailable"))
+        #expect(try pipes.readOutput().isEmpty)
+    }
 }
 
 // MARK: - JSON emit
@@ -93,34 +108,95 @@ private struct SamplePayload: Codable, Equatable {
 }
 
 @Test func writeJSONProducesObjectWithStableKeys() throws {
-    let value = SamplePayload(name: "Work", count: 2)
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-    let data = try encoder.encode(value)
-    let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-    #expect(obj?["name"] as? String == "Work")
-    #expect(obj?["count"] as? Int == 2)
-
-    // Key order in encoded UTF-8 should be alphabetical (count before name).
-    let text = String(data: data, encoding: .utf8) ?? ""
-    if let countRange = text.range(of: "\"count\""),
-        let nameRange = text.range(of: "\"name\"")
-    {
-        #expect(countRange.lowerBound < nameRange.lowerBound)
-    } else {
-        Issue.record("expected count and name keys in JSON")
+    try withRedirectedStdio { pipes in
+        let value = SamplePayload(name: "Work", count: 2)
+        try CLIOutput.writeJSON(value)
+        let text = try pipes.readOutput()
+        let data = Data(text.utf8)
+        let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        #expect(obj?["name"] as? String == "Work")
+        #expect(obj?["count"] as? Int == 2)
+        if let countRange = text.range(of: "\"count\""),
+            let nameRange = text.range(of: "\"name\"")
+        {
+            #expect(countRange.lowerBound < nameRange.lowerBound)
+        } else {
+            Issue.record("expected count and name keys in JSON")
+        }
+        #expect(try pipes.readError().isEmpty)
     }
 }
 
-@Test func emitUsesJsonContext() throws {
-    let value = SamplePayload(name: "Acme", count: 1)
-    try CLIContext.$jsonOutput.withValue(true) {
-        #expect(CLIContext.jsonOutput == true)
-        // Ensure encode path used by CLIOutput.writeJSON accepts the payload.
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(value)
-        #expect(!data.isEmpty)
+@Test func emitUsesJsonContextOnStdout() throws {
+    try withRedirectedStdio { pipes in
+        let value = SamplePayload(name: "Acme", count: 1)
+        try CLIContext.$jsonOutput.withValue(true) {
+            try CLIOutput.emit(value) { "\($0.name):\($0.count)" }
+        }
+        let text = try pipes.readOutput()
+        #expect(text.contains("\"name\""))
+        #expect(text.contains("Acme"))
+        #expect(!text.contains("Acme:1"))
+        #expect(try pipes.readError().isEmpty)
     }
-    #expect(CLIContext.jsonOutput == false)
+}
+
+@Test func emitTextModeOnStdout() throws {
+    try withRedirectedStdio { pipes in
+        let value = SamplePayload(name: "Acme", count: 1)
+        try CLIContext.$jsonOutput.withValue(false) {
+            try CLIOutput.emit(value) { "\($0.name):\($0.count)" }
+        }
+        #expect(try pipes.readOutput().contains("Acme:1"))
+        #expect(try pipes.readError().isEmpty)
+    }
+}
+
+// MARK: - Stdio test helpers
+
+private struct StdioPipes {
+    let outRead: FileHandle
+    let errRead: FileHandle
+    let outWrite: FileHandle
+    let errWrite: FileHandle
+
+    func readOutput() throws -> String {
+        outWrite.closeFile()
+        let data = outRead.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    func readError() throws -> String {
+        errWrite.closeFile()
+        let data = errRead.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    func restore() {
+        CLIOutput.standardOutput = .standardOutput
+        CLIOutput.standardError = .standardError
+        outRead.closeFile()
+        errRead.closeFile()
+    }
+}
+
+/// Serialize stdio redirection — Swift Testing runs cases in parallel by default.
+private let stdioTestLock = NSLock()
+
+private func withRedirectedStdio(_ body: (StdioPipes) throws -> Void) throws {
+    stdioTestLock.lock()
+    defer { stdioTestLock.unlock() }
+
+    let outPipe = Pipe()
+    let errPipe = Pipe()
+    let pipes = StdioPipes(
+        outRead: outPipe.fileHandleForReading,
+        errRead: errPipe.fileHandleForReading,
+        outWrite: outPipe.fileHandleForWriting,
+        errWrite: errPipe.fileHandleForWriting
+    )
+    CLIOutput.standardOutput = pipes.outWrite
+    CLIOutput.standardError = pipes.errWrite
+    defer { pipes.restore() }
+    try body(pipes)
 }

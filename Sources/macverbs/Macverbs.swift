@@ -51,11 +51,29 @@ enum MacverbsApp {
                 return ExitCodes.success
             }
         } catch let error as MacverbsError {
-            CLIOutput.writeError(error.message)
-            return error.processExitCode
+            return report(error)
         } catch {
             return handleArgumentParserError(error)
         }
+    }
+
+    /// Run an arbitrary throwing body under the same error/exit contract as verbs.
+    /// Used by tests (and future internal commands) to prove exit 1/2 + stderr.
+    static func runCatching(_ body: () throws -> Void) -> Int32 {
+        do {
+            try body()
+            return ExitCodes.success
+        } catch let error as MacverbsError {
+            return report(error)
+        } catch {
+            CLIOutput.writeError(String(describing: error))
+            return ExitCodes.system
+        }
+    }
+
+    private static func report(_ error: MacverbsError) -> Int32 {
+        CLIOutput.writeError(error.message)
+        return error.processExitCode
     }
 
     private static func handleArgumentParserError(_ error: Error) -> Int32 {
@@ -69,7 +87,7 @@ enum MacverbsApp {
                 // Usage and other parser failures → stderr.
                 let line = text.hasSuffix("\n") ? text : text + "\n"
                 if let data = line.data(using: .utf8) {
-                    try? FileHandle.standardError.write(contentsOf: data)
+                    try? CLIOutput.standardError.write(contentsOf: data)
                 }
             }
         }
