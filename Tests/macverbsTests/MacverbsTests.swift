@@ -2225,6 +2225,7 @@ private func utcDate(
     #expect(mailHelp.contains("read"))
     #expect(mailHelp.contains("archive"))
     #expect(mailHelp.contains("delete"))
+    #expect(mailHelp.contains("attachments"))
 }
 
 // MARK: - Mail list + read (T15)
@@ -2823,6 +2824,207 @@ private func utcDate(
         #expect(unsupported?.contains("All Mail") == true)
         let _errEmpty = try pipes.readError()
         #expect(_errEmpty.isEmpty)
+    }
+}
+
+// MARK: - Mail attachments (T17)
+
+@Test func mailScriptsAttachmentsSearchesInboxAndArchiveAndSaves() {
+    let s = MailScripts.attachments(
+        messageID: "<msg1@x>",
+        destDir: "/tmp/dest",
+        account: "Work"
+    )
+    #expect(s.contains("tell application \"Mail\""))
+    #expect(s.contains("INBOX"))
+    #expect(s.contains("Caixa de Entrada"))
+    #expect(s.contains("[Gmail]/Todos os e-mails"))
+    #expect(s.contains("[Gmail]/All Mail"))
+    #expect(s.contains("mail attachments of msg"))
+    #expect(s.contains("save att in (POSIX file destPath)"))
+    #expect(s.contains(#"/tmp/dest"#))
+    #expect(s.contains(#"<msg1@x>"#))
+    #expect(s.contains(#"(name of acct) is "Work""#))
+    #expect(s.contains("return \"__NOTFOUND__\""))
+    #expect(s.contains("character id 30"))
+}
+
+@Test func mailScriptsAttachmentsEscapesQuotes() {
+    let s = MailScripts.attachments(
+        messageID: #"id"mid"#,
+        destDir: #"/tmp/a"b"#,
+        account: #"Ac"me"#
+    )
+    #expect(s.contains(#"message id is "id\"mid""#))
+    #expect(s.contains(#""/tmp/a\"b""#))
+    #expect(s.contains(#"(name of acct) is "Ac\"me""#))
+}
+
+@Test func mailAttachmentsParsesSavedNames() throws {
+    let rs = AppleScript.recordSeparator
+    let out = "foto.jpg\(rs)doc.pdf\(rs)"
+    let r = try Mail.attachments(
+        messageID: "msg1",
+        destDir: "/tmp/dest",
+        runner: MockScriptRunner(stdout: out)
+    )
+    #expect(
+        r
+            == MailAttachmentsResult(
+                messageID: "msg1",
+                destDir: "/tmp/dest",
+                saved: ["foto.jpg", "doc.pdf"]
+            )
+    )
+}
+
+@Test func mailAttachmentsEmptySaved() throws {
+    let r = try Mail.attachments(
+        messageID: "msg1",
+        destDir: "/tmp/dest",
+        runner: MockScriptRunner(stdout: "")
+    )
+    #expect(r.saved.isEmpty)
+    #expect(r.messageID == "msg1")
+    #expect(r.destDir == "/tmp/dest")
+}
+
+@Test func mailAttachmentsNotFoundIsDomainError() {
+    do {
+        _ = try Mail.attachments(
+            messageID: "ghost",
+            destDir: "/tmp/dest",
+            runner: MockScriptRunner(stdout: "__NOTFOUND__\n")
+        )
+        Issue.record("expected domain error for missing message")
+    } catch let error as MacverbsError {
+        #expect(error == .domain("message ghost not found"))
+    } catch {
+        Issue.record("unexpected error: \(error)")
+    }
+}
+
+@Test func mailAttachmentsPassesAccountAndDestToRunner() throws {
+    let recorder = RecordingOsascriptProcess()
+    recorder.result = OsascriptProcessResult(exitStatus: 0, stdout: "", stderr: "")
+    let runner = OSAScriptRunner(process: recorder)
+    _ = try Mail.attachments(
+        messageID: "mid",
+        destDir: "/tmp/out",
+        account: "Acme",
+        runner: runner
+    )
+    #expect(recorder.scripts.count == 1)
+    let s = recorder.scripts[0]
+    #expect(s.contains(#"(name of acct) is "Acme""#))
+    #expect(s.contains(#"/tmp/out"#))
+    #expect(s.contains(#"message id is "mid""#))
+}
+
+@Test func mailFormatAttachmentsText() {
+    #expect(
+        Mail.formatAttachments(
+            MailAttachmentsResult(messageID: "m", destDir: "/tmp", saved: [])
+        ) == "no attachments."
+    )
+    let text = Mail.formatAttachments(
+        MailAttachmentsResult(
+            messageID: "m",
+            destDir: "/tmp/dest",
+            saved: ["foto.jpg", "doc.pdf"]
+        )
+    )
+    #expect(text == "saved to /tmp/dest:\n- foto.jpg\n- doc.pdf")
+}
+
+@Test func mailAttachmentsCommandJsonOnStdout() throws {
+    try withRedirectedStdio { pipes in
+        let rs = AppleScript.recordSeparator
+        BackendClients.scriptRunner = MockScriptRunner(
+            stdout: "foto.jpg\(rs)doc.pdf\(rs)"
+        )
+        defer { BackendClients.resetDefaults() }
+        let code = MacverbsApp.run(
+            arguments: [
+                "--json", "mail", "attachments", "<msg1@x>",
+                "--dest", "/tmp/dest", "--account", "Work",
+            ]
+        )
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        let obj = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any]
+        #expect(obj?["message_id"] as? String == "<msg1@x>")
+        #expect(obj?["dest_dir"] as? String == "/tmp/dest")
+        let saved = obj?["saved"] as? [String]
+        #expect(saved == ["foto.jpg", "doc.pdf"])
+        // Sorted keys: dest_dir, message_id, saved
+        if let destRange = text.range(of: "\"dest_dir\""),
+            let midRange = text.range(of: "\"message_id\""),
+            let savedRange = text.range(of: "\"saved\"")
+        {
+            #expect(destRange.lowerBound < midRange.lowerBound)
+            #expect(midRange.lowerBound < savedRange.lowerBound)
+        } else {
+            Issue.record("expected attachments JSON keys")
+        }
+        let _errEmpty = try pipes.readError()
+        #expect(_errEmpty.isEmpty)
+    }
+}
+
+@Test func mailAttachmentsCommandTextOnStdout() throws {
+    try withRedirectedStdio { pipes in
+        let rs = AppleScript.recordSeparator
+        BackendClients.scriptRunner = MockScriptRunner(stdout: "a.pdf\(rs)")
+        defer { BackendClients.resetDefaults() }
+        let code = MacverbsApp.run(
+            arguments: ["mail", "attachments", "mid-1", "--dest", "/tmp/out"]
+        )
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        #expect(text.contains("saved to /tmp/out:"))
+        #expect(text.contains("- a.pdf"))
+        let _errEmpty = try pipes.readError()
+        #expect(_errEmpty.isEmpty)
+    }
+}
+
+@Test func mailAttachmentsCommandEmptyText() throws {
+    try withRedirectedStdio { pipes in
+        BackendClients.scriptRunner = MockScriptRunner(stdout: "")
+        defer { BackendClients.resetDefaults() }
+        let code = MacverbsApp.run(
+            arguments: ["mail", "attachments", "mid", "--dest", "/tmp/x"]
+        )
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        #expect(text.contains("no attachments."))
+        let _errEmpty = try pipes.readError()
+        #expect(_errEmpty.isEmpty)
+    }
+}
+
+@Test func mailAttachmentsNotFoundExit1() throws {
+    try withRedirectedStdio { pipes in
+        BackendClients.scriptRunner = MockScriptRunner(stdout: "__NOTFOUND__")
+        defer { BackendClients.resetDefaults() }
+        let code = MacverbsApp.run(
+            arguments: ["mail", "attachments", "ghost", "--dest", "/tmp/x"]
+        )
+        #expect(code == ExitCodes.domain)
+        let err = try pipes.readError()
+        #expect(err.contains("error: message ghost not found"))
+        let _outEmpty = try pipes.readOutput()
+        #expect(_outEmpty.isEmpty)
+    }
+}
+
+@Test func mailAttachmentsRequiresDestUsageExit64() throws {
+    try withRedirectedStdio { pipes in
+        let code = MacverbsApp.run(arguments: ["mail", "attachments", "mid"])
+        #expect(code == ExitCodes.usage)
+        let _outEmpty = try pipes.readOutput()
+        #expect(_outEmpty.isEmpty)
     }
 }
 

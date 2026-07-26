@@ -68,6 +68,31 @@ extension MailMoveResult: Encodable {
     }
 }
 
+/// Result of `mail attachments` (saved file names under `--dest`).
+///
+/// JSON keys match the oracle: `message_id`, `dest_dir`, `saved`.
+struct MailAttachmentsResult: Equatable, Sendable {
+    var messageID: String
+    var destDir: String
+    /// Base names of attachments saved into `destDir` (may be empty).
+    var saved: [String]
+}
+
+extension MailAttachmentsResult: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case messageID = "message_id"
+        case destDir = "dest_dir"
+        case saved
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(messageID, forKey: .messageID)
+        try container.encode(destDir, forKey: .destDir)
+        try container.encode(saved, forKey: .saved)
+    }
+}
+
 /// Mailbox target for `mail list` (`inbox` or `archive`).
 enum MailMailbox: String, CaseIterable, ExpressibleByArgument, Sendable {
     case inbox
@@ -339,6 +364,49 @@ enum MailScripts {
             end tell
             """
     }
+
+    /// Save mail attachments for a message into `destDir` (inbox + archive search).
+    ///
+    /// Emits one attachment file name per RS-delimited record; empty output means
+    /// the message was found but has no attachments. Returns `__NOTFOUND__` when
+    /// the message is missing.
+    static func attachments(
+        messageID: String,
+        destDir: String,
+        account: String = ""
+    ) -> String {
+        let mid = AppleScript.escape(messageID)
+        let dest = AppleScript.escape(destDir)
+        let filter = accountFilter(account)
+        return separatorsHeader
+            + """
+            set boxNames to \(inboxNames) & \(archiveNames)
+            tell application "Mail"
+                repeat with acct in accounts
+                    if \(filter) then
+                        repeat with c in boxNames
+                            try
+                                set mb to mailbox c of acct
+                                set msgs to (messages of mb whose message id is "\(mid)")
+                                if (count of msgs) > 0 then
+                                    set msg to item 1 of msgs
+                                    set output to ""
+                                    repeat with att in mail attachments of msg
+                                        set attName to (name of att)
+                                        set destPath to "\(dest)" & "/" & attName
+                                        save att in (POSIX file destPath)
+                                        set output to output & attName & rs
+                                    end repeat
+                                    return output
+                                end if
+                            end try
+                        end repeat
+                    end if
+                end repeat
+                return "__NOTFOUND__"
+            end tell
+            """
+    }
 }
 
 // MARK: - Commands (oracle: apple.commands)
@@ -511,6 +579,44 @@ enum Mail {
         try move(account: account, ids: ids, target: .delete, runner: runner, timeout: timeout)
     }
 
+    /// Save attachments for a message into `destDir` (searches inbox + archive).
+    ///
+    /// Missing message → domain error (`message <id> not found`). Empty `saved`
+    /// means the message was found but has no attachments.
+    static func attachments(
+        messageID: String,
+        destDir: String,
+        account: String = "",
+        runner: any ScriptRunner = BackendClients.scriptRunner,
+        timeout: TimeInterval = defaultTimeout
+    ) throws -> MailAttachmentsResult {
+        let raw = try runner.run(
+            script: MailScripts.attachments(
+                messageID: messageID,
+                destDir: destDir,
+                account: account
+            ),
+            timeout: timeout
+        )
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed == notFoundSentinel {
+            throw MacverbsError.domain("message \(messageID) not found")
+        }
+        // Oracle: split on RS and drop blank names (not parseRecords field maps).
+        let saved =
+            raw.split(
+                separator: Character(AppleScript.recordSeparator),
+                omittingEmptySubsequences: false
+            )
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && $0 != notFoundSentinel }
+        return MailAttachmentsResult(
+            messageID: messageID,
+            destDir: destDir,
+            saved: saved
+        )
+    }
+
     // MARK: Text formatters
 
     /// Human lines for `mail accounts` (English; verb/flags match oracle).
@@ -561,6 +667,15 @@ enum Mail {
         }
         return line
     }
+
+    /// Human text for `mail attachments` (English; oracle shape).
+    static func formatAttachments(_ result: MailAttachmentsResult) -> String {
+        if result.saved.isEmpty {
+            return "no attachments."
+        }
+        let lines = result.saved.map { "- \($0)" }.joined(separator: "\n")
+        return "saved to \(result.destDir):\n\(lines)"
+    }
 }
 
 // MARK: - CLI
@@ -577,6 +692,7 @@ struct MailCommand: ParsableCommand {
             MailReadCommand.self,
             MailArchiveCommand.self,
             MailDeleteCommand.self,
+            MailAttachmentsCommand.self,
         ]
     )
 }
@@ -695,5 +811,31 @@ struct MailDeleteCommand: ParsableCommand {
     func run() throws {
         let result = try Mail.delete(account: account, ids: ids)
         try CLIOutput.emit(result, text: Mail.formatMove)
+    }
+}
+
+/// `macverbs mail attachments <message-id> --dest DIR [--account]`.
+struct MailAttachmentsCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "attachments",
+        abstract: "Save attachments from a message (searches inbox and archive)."
+    )
+
+    @Argument(help: "Message-ID header value (from mail list).")
+    var messageId: String
+
+    @Option(name: .long, help: "Destination directory for saved files (required).")
+    var dest: String
+
+    @Option(name: .long, help: "Filter by account name (empty = all accounts).")
+    var account: String = ""
+
+    func run() throws {
+        let result = try Mail.attachments(
+            messageID: messageId,
+            destDir: dest,
+            account: account
+        )
+        try CLIOutput.emit(result, text: Mail.formatAttachments)
     }
 }

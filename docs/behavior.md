@@ -236,7 +236,7 @@ Text: `created: Standup`.
 | read | `message-id`, `--account` | **done** (T15) |
 | archive | `ids…`, `--account` (required); **Gmail → unsupported** (honest refuse) | **done** (T16) |
 | delete | `ids…`, `--account` (required) | **done** (T16) |
-| attachments | `message-id`, `--dest` (required), `--account` | planned |
+| attachments | `message-id`, `--dest` (required), `--account` | **done** (T17) |
 | draft | `message-id`, `--body-file` (required), `--attach`… (repeatable), `--account`; **never send** | planned |
 | compose | `--subject` `--body-file` (required) `--to`… `--cc`… `--account`; **never send** | planned |
 
@@ -360,6 +360,28 @@ sync brings it back. Refuse with `moved: 0`, `remaining == requested`, and an
   "remaining": 1,
   "requested": 1,
   "unsupported": "archive is not supported on this account (Gmail): moving to '[Gmail]/All Mail' does not remove the message from the inbox. Use delete or archive manually in Mail."
+}
+```
+
+#### mail attachments (T17)
+
+Save every attachment of a message into `--dest` (required directory path).
+Optional `--account` narrows the search. Looks in inbox **and** archive
+candidates (same as `mail read`). Apple Events `save` each mail attachment to
+`dest/name`. Missing message → exit 1 (`message <id> not found`). Message found
+with zero attachments is success with empty `saved`.
+
+JSON: `{ "message_id", "dest_dir", "saved" }` where `saved` is an array of base
+file names. Text: `saved to <dest>:` plus `- name` lines, or `no attachments.`
+
+```json
+{
+  "dest_dir": "/tmp/dest",
+  "message_id": "<msg1@example.com>",
+  "saved": [
+    "foto.jpg",
+    "doc.pdf"
+  ]
 }
 ```
 
