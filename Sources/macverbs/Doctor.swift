@@ -28,7 +28,7 @@ struct DoctorEventKitBackend: Codable, Equatable, Sendable {
 }
 
 struct DoctorAppleEventsBackend: Codable, Equatable, Sendable {
-    /// Implementation identity (`stub` until T13).
+    /// Implementation identity (`osascript` when real; `stub` in tests).
     var kind: String
     /// Whether a real runner is available (false for stub).
     var wired: Bool
@@ -135,6 +135,9 @@ enum Doctor {
     private static func scriptRunnerKindName(_ runner: any ScriptRunner) -> String {
         if runner is StubScriptRunner {
             return StubScriptRunner.kind
+        }
+        if runner is OSAScriptRunner {
+            return OSAScriptRunner.kind
         }
         return String(describing: type(of: runner))
     }

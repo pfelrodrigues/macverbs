@@ -58,11 +58,12 @@ struct StubEventStoreClient: EventStoreClient {
 /// `CLIOutput.standardOutput`).
 enum BackendClients {
     nonisolated(unsafe) static var eventStore: any EventStoreClient = StubEventStoreClient()
-    nonisolated(unsafe) static var scriptRunner: any ScriptRunner = StubScriptRunner()
+    /// Real osascript runner (T13). EventKit remains stub until T06.
+    nonisolated(unsafe) static var scriptRunner: any ScriptRunner = OSAScriptRunner()
 
-    /// Restore stub defaults (call from test teardown when overriding).
+    /// Restore production defaults (call from test teardown when overriding).
     static func resetDefaults() {
         eventStore = StubEventStoreClient()
-        scriptRunner = StubScriptRunner()
+        scriptRunner = OSAScriptRunner()
     }
 }

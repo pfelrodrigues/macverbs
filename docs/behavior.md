@@ -97,17 +97,18 @@ Date/time forms: `YYYY-MM-DD HH:MM` (oracle-compatible).
 
 #### doctor (stub)
 
-Runs without EventKit/osascript and without TCC prompts. Reports backend wiring
-and authorization status from injectable seams (`EventStoreClient`,
-`ScriptRunner`). With default stubs, `ok` is false and `missing` lists what is
-not wired yet.
+Runs without EventKit permission prompts. Reports backend wiring and
+authorization status from injectable seams (`EventStoreClient`, `ScriptRunner`).
+Default production wiring: `ScriptRunner` is real osascript (T13); EventKit is
+still a stub until T06. With that mix, `ok` is false and `missing` lists EventKit
+gaps. Tests may inject `StubScriptRunner` to report Apple Events as unwired.
 
-JSON shape:
+JSON shape (production defaults after T13, EventKit still stub):
 
 ```json
 {
   "backends": {
-    "appleEvents": { "kind": "stub", "wired": false },
+    "appleEvents": { "kind": "osascript", "wired": true },
     "eventKit": {
       "calendar": "unavailable",
       "kind": "stub",
@@ -115,8 +116,7 @@ JSON shape:
     }
   },
   "missing": [
-    "EventKit client not wired (Calendar, Reminders; see T06)",
-    "ScriptRunner not wired (Mail, Notes via Apple Events; see T13)"
+    "EventKit client not wired (Calendar, Reminders; see T06)"
   ],
   "ok": false,
   "version": "0.1.0"
@@ -125,6 +125,16 @@ JSON shape:
 
 Exit 0 when the report is produced successfully (gaps go in `missing`, not exit
 code).
+
+#### ScriptRunner (T13)
+
+- Protocol `ScriptRunner.run(script:timeout:)` returns osascript stdout.
+- Production: `OSAScriptRunner` → `/usr/bin/osascript -e …` (process launch is
+  injectable via `OsascriptProcessLaunching` for unit tests).
+- Non-zero exit → `MacverbsError.system` with stderr (or `"AppleScript failed"`).
+- `AppleScript.escape` for safe double-quoted string interpolation (oracle `esc`).
+- `AppleScript.parseRecords` for US/RS-delimited structured output (oracle
+  `parse_records`; field sep U+001F, record sep U+001E).
 
 ## JSON field notes (fill as verbs land)
 
