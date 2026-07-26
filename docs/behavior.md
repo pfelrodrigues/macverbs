@@ -221,10 +221,52 @@ Text: `created: Standup`.
 
 | Verb | Args | Status |
 |------|------|--------|
-| list | `--folder` (default `Notes`) | planned |
-| read | `title` | planned |
-| create | `title`, `body`, `--folder` (default `Notes`) | planned |
-| search | `query` | planned |
+| list | `--folder` (default `Notes`) | **done** (T20) |
+| read | `title` | **done** (T20) |
+| create | `title`, `body`, `--folder` (default `Notes`) | **done** (T20) |
+| search | `query` | **done** (T20) |
+
+#### notes list / read / create / search (T20)
+
+Apple Events via Notes.app (`ScriptRunner`). `--folder` defaults to `Notes`
+(the default Notes folder name). List is scoped to that folder; search scans
+every note (name or plaintext contains query). Read matches the first note
+whose name is exactly `title`. Create makes a new note in `--folder`.
+
+JSON list / search: array of `{ "title", "modified" }` (`modified` is the
+AppleScript `modification date as text` string). Text: `- title | modified`,
+or `no notes.` when empty.
+
+JSON read: `{ "title", "body" }`. Text: the body string (or `(empty)` when
+blank) — oracle `fmt.body` prints body only.
+
+JSON create: `{ "created", "folder" }`. Text: `created: <title>`.
+
+Missing note / folder failures surface as AppleScript errors (exit 2 via
+ScriptRunner), matching the oracle (no special not-found sentinel).
+
+```json
+[
+  {
+    "modified": "Saturday, July 5, 2026 at 10:00:00 AM",
+    "title": "Standup notes"
+  }
+]
+```
+
+```json
+{
+  "body": "Hello from the meeting",
+  "title": "Standup notes"
+}
+```
+
+```json
+{
+  "created": "Standup notes",
+  "folder": "Notes"
+}
+```
 
 ### mail
 

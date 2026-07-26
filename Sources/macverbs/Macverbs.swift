@@ -17,6 +17,7 @@ struct Macverbs: ParsableCommand {
             CalendarCommand.self,
             DoctorCommand.self,
             MailCommand.self,
+            NotesCommand.self,
             RemindersCommand.self,
         ]
     )
