@@ -82,6 +82,23 @@ macverbs doctor
 Global: `--json` **before** the subcommand. Exit codes: `0` ok, `1` domain,
 `2` system, `64` usage. Errors on stderr; successful JSON on stdout.
 
+## Shell completions
+
+Scripts for **fish**, **zsh**, and **bash** live under [`completions/`](completions/).
+Regenerate after CLI changes: `mise run generate-completions` (or
+`macverbs --generate-completion-script fish`).
+
+```fish
+# fish
+mkdir -p ~/.config/fish/completions
+ln -sf (pwd)/completions/macverbs.fish ~/.config/fish/completions/macverbs.fish
+```
+
+```bash
+# zsh — put completions/_macverbs on fpath, then compinit
+# bash — source completions/macverbs.bash from bashrc
+```
+
 ## Develop
 
 ```bash

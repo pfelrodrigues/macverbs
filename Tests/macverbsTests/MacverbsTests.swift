@@ -1437,6 +1437,66 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
     #expect(mock.authorizationStatus(for: .notes) == .notRunning)
 }
 
+// MARK: - Shell completions (T22)
+
+@Test func generateCompletionScriptFishCoversDomains() throws {
+    try withRedirectedStdio { pipes in
+        let code = MacverbsApp.run(arguments: ["--generate-completion-script", "fish"])
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        #expect(text.contains("complete -c 'macverbs'"))
+        for domain in ["calendar", "reminders", "mail", "notes", "doctor"] {
+            #expect(text.contains(domain), "fish script missing domain \(domain)")
+        }
+        for flag in ["json", "mailbox", "priority"] {
+            #expect(text.contains(flag), "fish script missing \(flag)")
+        }
+        #expect(text.contains("high medium low"))
+        #expect(text.contains("inbox archive"))
+        #expect(try pipes.readError().isEmpty)
+    }
+}
+
+@Test func generateCompletionScriptZshCoversDomains() throws {
+    try withRedirectedStdio { pipes in
+        let code = MacverbsApp.run(arguments: ["--generate-completion-script", "zsh"])
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        #expect(text.contains("#compdef macverbs"))
+        for domain in ["calendar", "reminders", "mail", "notes", "doctor"] {
+            #expect(text.contains(domain), "zsh script missing domain \(domain)")
+        }
+        #expect(text.contains("json"))
+        #expect(try pipes.readError().isEmpty)
+    }
+}
+
+@Test func generateCompletionScriptBashCoversDomains() throws {
+    try withRedirectedStdio { pipes in
+        let code = MacverbsApp.run(arguments: ["--generate-completion-script", "bash"])
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        #expect(text.contains("_macverbs") || text.contains("macverbs"))
+        for domain in ["calendar", "reminders", "mail", "notes", "doctor"] {
+            #expect(text.contains(domain), "bash script missing domain \(domain)")
+        }
+        #expect(try pipes.readError().isEmpty)
+    }
+}
+
+@Test func generateCompletionScriptRejectsUnknownShell() throws {
+    try withRedirectedStdio { pipes in
+        let code = MacverbsApp.run(arguments: ["--generate-completion-script", "power"])
+        // ArgumentParser treats unknown shell as a message (still success path text
+        // or usage); either way stderr/stdout must mention valid shells.
+        let out = try pipes.readOutput()
+        let err = try pipes.readError()
+        let combined = out + err
+        #expect(combined.contains("fish") || combined.contains("zsh") || combined.contains("bash"))
+        #expect(code == ExitCodes.success || code == ExitCodes.usage)
+    }
+}
+
 // MARK: - Calendar list (T07)
 
 /// Fixed UTC calendar for deterministic `when` strings in unit tests.

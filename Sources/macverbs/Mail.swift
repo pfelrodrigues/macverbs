@@ -1086,7 +1086,11 @@ struct MailAttachmentsCommand: ParsableCommand {
     @Argument(help: "Message-ID header value (from mail list).")
     var messageId: String
 
-    @Option(name: .long, help: "Destination directory for saved files (required).")
+    @Option(
+        name: .long,
+        help: "Destination directory for saved files (required).",
+        completion: .directory
+    )
     var dest: String
 
     @Option(name: .long, help: "Filter by account name (empty = all accounts).")
@@ -1114,7 +1118,11 @@ struct MailDraftCommand: ParsableCommand {
     @Argument(help: "Message-ID header value (from mail list).")
     var messageId: String
 
-    @Option(name: .long, help: "File with the draft body (required).")
+    @Option(
+        name: .long,
+        help: "File with the draft body (required).",
+        completion: .file()
+    )
     var bodyFile: String
 
     @Option(name: .long, help: "Filter by account name (empty = all accounts).")
@@ -1123,7 +1131,8 @@ struct MailDraftCommand: ParsableCommand {
     @Option(
         name: .long,
         parsing: .singleValue,
-        help: "File path to attach (repeatable)."
+        help: "File path to attach (repeatable).",
+        completion: .file()
     )
     var attach: [String] = []
 
@@ -1152,7 +1161,11 @@ struct MailComposeCommand: ParsableCommand {
     @Option(name: .long, help: "Subject line (required).")
     var subject: String
 
-    @Option(name: .long, help: "File with the draft body (required).")
+    @Option(
+        name: .long,
+        help: "File with the draft body (required).",
+        completion: .file()
+    )
     var bodyFile: String
 
     @Option(

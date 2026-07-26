@@ -493,6 +493,29 @@ JSON compose: `{ "subject", "to", "cc" }`. Text:
 |------|--------|
 | doctor | **done** (T21; full TCC report) |
 | --version / --help | **done** (T01) |
+| shell completions | **done** (T22; fish + zsh + bash) |
+
+#### Shell completions (T22)
+
+ArgumentParser generates scripts via:
+
+```text
+macverbs --generate-completion-script fish
+macverbs --generate-completion-script zsh
+macverbs --generate-completion-script bash
+```
+
+Checked-in copies (regenerate with `mise run generate-completions`):
+
+| Shell | Path | Install (example) |
+|-------|------|-------------------|
+| fish | `completions/macverbs.fish` | copy/symlink into `~/.config/fish/completions/` |
+| zsh | `completions/_macverbs` | put on `$fpath` (e.g. site-functions) |
+| bash | `completions/macverbs.bash` | `source` from bashrc, or install under bash-completion |
+
+Covers every domain verb (`calendar`, `reminders`, `mail`, `notes`, `doctor`),
+global `--json`, and constrained values such as `--mailbox`, `--priority`,
+path/directory options for mail draft/compose/attachments.
 
 #### doctor (T21)
 

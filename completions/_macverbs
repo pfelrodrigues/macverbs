@@ -1,0 +1,539 @@
+#compdef macverbs
+
+__macverbs_complete() {
+    local -ar non_empty_completions=("${@:#(|:*)}")
+    local -ar empty_completions=("${(M)@:#(|:*)}")
+    _describe -V '' non_empty_completions -- empty_completions -P $'\'\''
+}
+
+__macverbs_custom_complete() {
+    local -a completions
+    completions=("${(@f)"$("${command_name}" "${@}" "${command_line[@]}")"}")
+    if [[ "${#completions[@]}" -gt 1 ]]; then
+        __macverbs_complete "${completions[@]:0:-1}"
+    fi
+}
+
+__macverbs_cursor_index_in_current_word() {
+    if [[ -z "${QIPREFIX}${IPREFIX}${PREFIX}" ]]; then
+        printf 0
+    else
+        printf %s "${#${(z)LBUFFER}[-1]}"
+    fi
+}
+
+_macverbs() {
+    emulate -RL zsh -G
+    setopt extendedglob nullglob numericglobsort
+    unsetopt aliases banghist
+
+    local -xr SAP_SHELL=zsh
+    local -x SAP_SHELL_VERSION
+    SAP_SHELL_VERSION="$(builtin emulate zsh -c 'printf %s "${ZSH_VERSION}"')"
+    local -r SAP_SHELL_VERSION
+
+    local context state state_descr line
+    local -A opt_args
+
+    local -r command_name="${words[1]}"
+    local -ar command_line=("${words[@]}")
+    local -ir current_word_index="$((CURRENT - 1))"
+
+    local -i ret=1
+    local -ar arg_specs=(
+        '--json[Emit one JSON value on stdout (place before the subcommand).]'
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+        '(-): :->command'
+        '(-)*:: :->arg'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+    case "${state}" in
+    command)
+        local -ar subcommands=(
+            'calendar:Calendar events (EventKit).'
+            'doctor:Report environment readiness (no permission prompts).'
+            'mail:Mail accounts and messages (Apple Events).'
+            'notes:Notes folders and notes (Apple Events).'
+            'reminders:Reminders via EventKit.'
+            'help:Show subcommand help information.'
+        )
+        _describe -V subcommand subcommands && ret=0
+        ;;
+    arg)
+        case "${words[1]}" in
+        calendar|doctor|mail|notes|reminders|help)
+            "_macverbs_${words[1]}" && ret=0
+            ;;
+        esac
+        ;;
+    esac
+
+    return "${ret}"
+}
+
+_macverbs_calendar() {
+    local -i ret=1
+    local -ar arg_specs=(
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+        '(-): :->command'
+        '(-)*:: :->arg'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+    case "${state}" in
+    command)
+        local -ar subcommands=(
+            'list:List upcoming events (recurring expanded; labels from config).'
+            'add:Create a timed calendar event (EventKit).'
+        )
+        _describe -V subcommand subcommands && ret=0
+        ;;
+    arg)
+        case "${words[1]}" in
+        list|add)
+            "_macverbs_calendar_${words[1]}" && ret=0
+            ;;
+        esac
+        ;;
+    esac
+
+    return "${ret}"
+}
+
+_macverbs_calendar_list() {
+    local -i ret=1
+    local -ar arg_specs=(
+        '--days[Days ahead of today to include (default\: 7; 0 = today only).]:days:'
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_calendar_add() {
+    local -i ret=1
+    local -ar arg_specs=(
+        ':title:'
+        '--start[Start datetime (YYYY-MM-DD HH\:MM).]:start:'
+        '--end[End datetime (YYYY-MM-DD HH\:MM).]:end:'
+        '--calendar[Calendar alias, title, or UID. Empty = default calendar.]:calendar:'
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_doctor() {
+    local -i ret=1
+    local -ar arg_specs=(
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_mail() {
+    local -i ret=1
+    local -ar arg_specs=(
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+        '(-): :->command'
+        '(-)*:: :->arg'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+    case "${state}" in
+    command)
+        local -ar subcommands=(
+            'accounts:List configured Mail accounts.'
+            'unread:Unread message counts per account.'
+            'list:List recent messages (all accounts by default).'
+            'read:Read a message by message-id (searches inbox and archive).'
+            'archive:Archive messages (move to archive; effect verified).'
+            'delete:Delete messages (move to trash; effect verified).'
+            'attachments:Save attachments from a message (searches inbox and archive).'
+            'draft:Create a reply draft to a message (never sends).'
+            'compose:Create a new email draft (never sends).'
+        )
+        _describe -V subcommand subcommands && ret=0
+        ;;
+    arg)
+        case "${words[1]}" in
+        accounts|unread|list|read|archive|delete|attachments|draft|compose)
+            "_macverbs_mail_${words[1]}" && ret=0
+            ;;
+        esac
+        ;;
+    esac
+
+    return "${ret}"
+}
+
+_macverbs_mail_accounts() {
+    local -i ret=1
+    local -ar arg_specs=(
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_mail_unread() {
+    local -i ret=1
+    local -ar arg_specs=(
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_mail_list() {
+    local -i ret=1
+    local -ar ___mailbox=('inbox' 'archive')
+    local -ar arg_specs=(
+        '--account[Filter by account name (empty = all accounts).]:account:'
+        '--limit[Max messages per account (default\: 20).]:limit:'
+        '--mailbox[Mailbox to list\: inbox or archive (default\: inbox).]:mailbox:{__macverbs_complete "${___mailbox[@]}"}'
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_mail_read() {
+    local -i ret=1
+    local -ar arg_specs=(
+        ':message-id:'
+        '--account[Filter by account name (empty = all accounts).]:account:'
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_mail_archive() {
+    local -i ret=1
+    local -ar arg_specs=(
+        '*:ids:'
+        '--account[Account that owns the messages (required).]:account:'
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_mail_delete() {
+    local -i ret=1
+    local -ar arg_specs=(
+        '*:ids:'
+        '--account[Account that owns the messages (required).]:account:'
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_mail_attachments() {
+    local -i ret=1
+    local -ar arg_specs=(
+        ':message-id:'
+        '--dest[Destination directory for saved files (required).]:dest:_files -/'
+        '--account[Filter by account name (empty = all accounts).]:account:'
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_mail_draft() {
+    local -i ret=1
+    local -ar arg_specs=(
+        ':message-id:'
+        '--body-file[File with the draft body (required).]:body-file:_files'
+        '--account[Filter by account name (empty = all accounts).]:account:'
+        '*--attach[File path to attach (repeatable).]:attach:_files'
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_mail_compose() {
+    local -i ret=1
+    local -ar arg_specs=(
+        '--subject[Subject line (required).]:subject:'
+        '--body-file[File with the draft body (required).]:body-file:_files'
+        '*--to[To recipient (repeatable; empty = fill later in Mail).]:to:'
+        '*--cc[Cc recipient (repeatable).]:cc:'
+        '--account[Sender account name (empty = Mail default).]:account:'
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_notes() {
+    local -i ret=1
+    local -ar arg_specs=(
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+        '(-): :->command'
+        '(-)*:: :->arg'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+    case "${state}" in
+    command)
+        local -ar subcommands=(
+            'list:List notes in a folder (default: Notes).'
+            'read:Read a note by exact title (first match).'
+            'create:Create a note in a folder (default: Notes).'
+            'search:Search notes by title or body contains query.'
+        )
+        _describe -V subcommand subcommands && ret=0
+        ;;
+    arg)
+        case "${words[1]}" in
+        list|read|create|search)
+            "_macverbs_notes_${words[1]}" && ret=0
+            ;;
+        esac
+        ;;
+    esac
+
+    return "${ret}"
+}
+
+_macverbs_notes_list() {
+    local -i ret=1
+    local -ar arg_specs=(
+        '--folder[Notes folder name (default\: Notes).]:folder:'
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_notes_read() {
+    local -i ret=1
+    local -ar arg_specs=(
+        ':title:'
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_notes_create() {
+    local -i ret=1
+    local -ar arg_specs=(
+        ':title:'
+        ':body:'
+        '--folder[Notes folder name (default\: Notes).]:folder:'
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_notes_search() {
+    local -i ret=1
+    local -ar arg_specs=(
+        ':query:'
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_reminders() {
+    local -i ret=1
+    local -ar arg_specs=(
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+        '(-): :->command'
+        '(-)*:: :->arg'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+    case "${state}" in
+    command)
+        local -ar subcommands=(
+            'lists:List reminder lists and pending counts.'
+            'list:List incomplete reminders (optionally filter by list).'
+            'add:Create a reminder.'
+            'done:Mark a reminder complete (exact title match).'
+            'move:Move a reminder between lists (exact title match).'
+            'edit:Edit due date, priority, and/or notes (exact title match).'
+            'mklist:Ensure a reminder list exists (create if missing).'
+            'delete:Delete a reminder without completing it (exact title match).'
+        )
+        _describe -V subcommand subcommands && ret=0
+        ;;
+    arg)
+        case "${words[1]}" in
+        lists|list|add|done|move|edit|mklist|delete)
+            "_macverbs_reminders_${words[1]}" && ret=0
+            ;;
+        esac
+        ;;
+    esac
+
+    return "${ret}"
+}
+
+_macverbs_reminders_lists() {
+    local -i ret=1
+    local -ar arg_specs=(
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_reminders_list() {
+    local -i ret=1
+    local -ar arg_specs=(
+        '--list[Reminder list name. Empty = all lists.]:list:'
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_reminders_add() {
+    local -i ret=1
+    local -ar ___priority=('high' 'medium' 'low')
+    local -ar arg_specs=(
+        ':title:'
+        '--list[List name. Empty = default list.]:list:'
+        '--due[Due date\: YYYY-MM-DD or YYYY-MM-DD HH\:MM.]:due:'
+        '--notes[Notes / body.]:notes:'
+        '--priority[Priority\: high, medium, or low.]:priority:{__macverbs_complete "${___priority[@]}"}'
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_reminders_done() {
+    local -i ret=1
+    local -ar arg_specs=(
+        ':title:'
+        '--list[List name. Empty = default list.]:list:'
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_reminders_move() {
+    local -i ret=1
+    local -ar arg_specs=(
+        ':title:'
+        '--from[Source list name (required).]:from:'
+        '--to[Destination list name (required).]:to:'
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_reminders_edit() {
+    local -i ret=1
+    local -ar ___priority=('high' 'medium' 'low' 'none')
+    local -ar arg_specs=(
+        ':title:'
+        '--list[List name. Empty = default list.]:list:'
+        '--due[Due date\: YYYY-MM-DD or YYYY-MM-DD HH\:MM.]:due:'
+        '--priority[Priority\: high, medium, low, or none (clear).]:priority:{__macverbs_complete "${___priority[@]}"}'
+        '--notes[Notes / body.]:notes:'
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_reminders_mklist() {
+    local -i ret=1
+    local -ar arg_specs=(
+        ':name:'
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_reminders_delete() {
+    local -i ret=1
+    local -ar arg_specs=(
+        ':title:'
+        '--list[List name. Empty = default list.]:list:'
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_help() {
+    local -i ret=1
+    local -ar arg_specs=(
+        '*:subcommands:'
+        '--version[Show the version.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+if [[ "${funcstack[1]}" = _macverbs ]]; then
+    _macverbs "${@}"
+else
+    compdef _macverbs macverbs
+fi

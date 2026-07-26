@@ -614,7 +614,8 @@ struct RemindersAddCommand: ParsableCommand {
 
     @Option(
         name: .long,
-        help: "Priority: high, medium, or low."
+        help: "Priority: high, medium, or low.",
+        completion: .list(["high", "medium", "low"])
     )
     var priority: String = ""
 
@@ -704,7 +705,8 @@ struct RemindersEditCommand: ParsableCommand {
 
     @Option(
         name: .long,
-        help: "Priority: high, medium, low, or none (clear)."
+        help: "Priority: high, medium, low, or none (clear).",
+        completion: .list(["high", "medium", "low", "none"])
     )
     var priority: String = ""
 

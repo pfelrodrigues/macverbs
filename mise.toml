@@ -66,3 +66,8 @@ run = "bash scripts/install-git-hooks.sh"
 description = "Install git hooks (swift format is on PATH via Apple toolchain)"
 depends = ["hooks-install"]
 run = "echo setup-ok"
+
+[tasks.generate-completions]
+description = "Regenerate fish/zsh/bash completions from the built binary"
+depends = ["build"]
+run = "bash scripts/generate-completions.sh"

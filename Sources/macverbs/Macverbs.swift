@@ -87,8 +87,9 @@ enum MacverbsApp {
         let text = Macverbs.fullMessage(for: error)
         if !text.isEmpty {
             if code.isSuccess {
-                // Help / version / clean messages → stdout.
-                print(text, terminator: text.hasSuffix("\n") ? "" : "\n")
+                // Help / version / completion scripts → stdout (CLIOutput so tests
+                // can redirect; same as process stdout in production).
+                CLIOutput.writeText(text)
             } else {
                 // Usage and other parser failures → stderr.
                 let line = text.hasSuffix("\n") ? text : text + "\n"
