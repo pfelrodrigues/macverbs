@@ -14,12 +14,15 @@ Do not paste proprietary account names into examples. Use `Work`, `Personal`, `A
 | Binary | `macverbs` |
 | Global flags | `--json` **before** the subcommand (e.g. `macverbs --json calendar list`) |
 | stdout (text) | Human lines via formatters |
-| stdout (`--json`) | One JSON value (object or array); stable keys |
-| stderr | Errors and diagnostics only |
+| stdout (`--json`) | One JSON value (object or array); pretty-printed, sorted keys |
+| stderr | Errors and diagnostics only (`error: <message>` for domain/system) |
 | Exit 0 | Success |
 | Exit 1 | Domain / user error (not found, unsupported, denied) |
 | Exit 2 | System / backend failure |
-| Exit 64 | Usage / parse error |
+| Exit 64 | Usage / parse error (`EX_USAGE`) |
+
+Help (`-h` / `--help`) and `--version` write to stdout and exit 0. Usage failures
+(unknown option, missing required arg) write to stderr and exit 64.
 
 ## Backends (hybrid)
 
