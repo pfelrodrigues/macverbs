@@ -44,9 +44,9 @@ Help (`-h` / `--help`) and `--version` write to stdout and exit 0. Usage failure
 | list | `--list` (optional; empty = all lists) | **done** (T09) |
 | add | `title`, `--list` `--due` `--notes` `--priority high\|medium\|low` | **done** (T10) |
 | done | `title`, `--list` | **done** (T10) |
-| move | `title`, `--from` (required) `--to` (required) | planned |
-| edit | `title`, `--list` `--due` `--priority high\|medium\|low\|none` `--notes` | planned |
-| mklist | `name` (idempotent: ensure list exists) | planned |
+| move | `title`, `--from` (required) `--to` (required) | **done** (T11) |
+| edit | `title`, `--list` `--due` `--priority high\|medium\|low\|none` `--notes` | **done** (T11) |
+| mklist | `name` (idempotent: ensure list exists) | **done** (T11) |
 | delete | `title`, `--list` (delete without completing) | **done** (T10) |
 
 #### reminders lists / list (T09)
@@ -116,6 +116,44 @@ Exit 1 when list or reminder is missing, or due/priority is invalid.
 ```json
 {
   "deleted": "Temp task"
+}
+```
+
+#### reminders move / edit / mklist (T11)
+
+EventKit mutations. `move` requires `--from` and `--to` (exact list titles);
+matches the first incomplete reminder with exact title in the source list and
+reassigns its calendar. `edit` requires at least one of `--due`, `--priority`,
+or `--notes`; empty `--list` uses the default list. Priority accepts
+`high|medium|low|none` (`none` clears). `mklist` creates the list when missing
+and is a no-op when it already exists.
+
+JSON move: `{ "moved", "from", "to" }`. Text: `moved: <title> (<from> → <to>)`.
+
+JSON edit: `{ "edited" }`. Text: `edited: <title>`.
+
+JSON mklist: `{ "list" }`. Text: `list ensured: <name>`.
+
+Exit 1 when list/reminder is missing, due/priority is invalid, or edit has no
+fields to change.
+
+```json
+{
+  "from": "Work",
+  "moved": "Standup prep",
+  "to": "Personal"
+}
+```
+
+```json
+{
+  "edited": "Standup prep"
+}
+```
+
+```json
+{
+  "list": "Acme"
 }
 ```
 
@@ -196,8 +234,8 @@ Text: `created: Standup`.
 | unread | | **done** (T14) |
 | list | `--account` (empty = all) `--limit` (default `20`) `--mailbox inbox\|archive` (default `inbox`) | **done** (T15) |
 | read | `message-id`, `--account` | **done** (T15) |
-| archive | `ids…`, `--account` (required); **Gmail → unsupported** (honest refuse) | planned |
-| delete | `ids…`, `--account` (required) | planned |
+| archive | `ids…`, `--account` (required); **Gmail → unsupported** (honest refuse) | **done** (T16) |
+| delete | `ids…`, `--account` (required) | **done** (T16) |
 | attachments | `message-id`, `--dest` (required), `--account` | planned |
 | draft | `message-id`, `--body-file` (required), `--attach`… (repeatable), `--account`; **never send** | planned |
 | compose | `--subject` `--body-file` (required) `--to`… `--cc`… `--account`; **never send** | planned |
@@ -278,6 +316,53 @@ JSON: `{ "body": "…" }`. Text: the body string (or `(empty)` when blank).
 }
 ```
 
+#### mail archive / delete (T16)
+
+Move messages from the account inbox to archive (`archive`) or trash
+(`delete`), then **re-count** how many of the requested message-ids remain in
+the inbox (embedded verification; never trust a silent no-op). `--account` is
+**required**. At least one message-id argument is required.
+
+JSON: `{ "account", "action", "moved", "requested", "remaining" }` plus optional
+`"unsupported"` when archive is refused. Text: `account: moved/requested
+archived|deleted` and, when `remaining > 0`, `; N remaining in inbox`.
+
+Gmail archive is **unsupported**: resolving the destination to All Mail
+(`[Gmail]/All Mail` / `Todos os e-mails`) would only hide the message locally;
+sync brings it back. Refuse with `moved: 0`, `remaining == requested`, and an
+`unsupported` explanation (exit 0). Delete (trash) still works on Gmail.
+
+```json
+{
+  "account": "Work",
+  "action": "archive",
+  "moved": 2,
+  "remaining": 0,
+  "requested": 2
+}
+```
+
+```json
+{
+  "account": "Personal",
+  "action": "delete",
+  "moved": 1,
+  "remaining": 1,
+  "requested": 2
+}
+```
+
+```json
+{
+  "account": "Acme",
+  "action": "archive",
+  "moved": 0,
+  "remaining": 1,
+  "requested": 1,
+  "unsupported": "archive is not supported on this account (Gmail): moving to '[Gmail]/All Mail' does not remove the message from the inbox. Use delete or archive manually in Mail."
+}
+```
+
 #### Mail behavioral constraints (oracle)
 
 - Multi-account: resolve inbox by name candidates (`INBOX` vs localized Exchange names). Prefer scanning all accounts when `--account` is empty.
@@ -338,6 +423,9 @@ code).
   `EventKitCalendarInfo`, `EventKitEventInfo`.
 - Calendar create (T08): `saveEvent(title:start:end:calendarUID:)` (`nil` UID →
   store default calendar for new events).
+- Reminders mutations (T09–T11): `reminderLists`, `incompleteReminders`,
+  `addReminder`, `completeReminder`, `deleteReminder`, `moveReminder`,
+  `editReminder`, `ensureReminderList` (mklist).
 - Production: `EKEventStoreClient` (`kind: eventkit`) wraps `EKEventStore` via
   injectable `EventKitBacking` (live store or test double).
 - Unit tests use `MockEventStoreClient` / fake backing; never require live TCC.

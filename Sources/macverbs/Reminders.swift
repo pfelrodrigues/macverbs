@@ -44,6 +44,23 @@ struct ReminderDeleted: Codable, Equatable, Sendable {
     var deleted: String
 }
 
+/// Result of `reminders move` (oracle: `moved`, `from`, `to`).
+struct ReminderMoved: Codable, Equatable, Sendable {
+    var moved: String
+    var from: String
+    var to: String
+}
+
+/// Result of `reminders edit` (oracle: `edited`).
+struct ReminderEdited: Codable, Equatable, Sendable {
+    var edited: String
+}
+
+/// Result of `reminders mklist` (oracle: `list`).
+struct ReminderListEnsured: Codable, Equatable, Sendable {
+    var list: String
+}
+
 // MARK: - Priority + due formatting (oracle parity)
 
 /// Shared mapping helpers for reminder fields.
@@ -82,7 +99,7 @@ enum ReminderFields {
             return 9
         default:
             throw MacverbsError.domain(
-                "invalid priority '\(name)' (expected high|medium|low)"
+                "invalid priority '\(name)' (expected high|medium|low|none)"
             )
         }
     }
@@ -207,6 +224,18 @@ enum RemindersFormat {
 
     static func deleted(_ result: ReminderDeleted) -> String {
         "deleted: \(result.deleted)"
+    }
+
+    static func moved(_ result: ReminderMoved) -> String {
+        "moved: \(result.moved) (\(result.from) → \(result.to))"
+    }
+
+    static func edited(_ result: ReminderEdited) -> String {
+        "edited: \(result.edited)"
+    }
+
+    static func listEnsured(_ result: ReminderListEnsured) -> String {
+        "list ensured: \(result.list)"
     }
 
     private static func formatItem(_ r: ReminderItem) -> String {
@@ -336,6 +365,103 @@ enum LiveRemindersQuery {
         return ReminderDeleted(deleted: title)
     }
 
+    /// Move first incomplete match from `fromList` to `toList` (exact titles).
+    static func move(
+        store: EKEventStore,
+        title: String,
+        fromList: String,
+        toList: String
+    ) throws -> ReminderMoved {
+        let source = try resolveList(store: store, listName: fromList)
+        let destination = try resolveList(store: store, listName: toList)
+        let rows = try fetchIncompleteReminders(store: store, calendars: [source])
+        guard let match = rows.first(where: { ($0.title ?? "") == title }) else {
+            throw MacverbsError.domain("reminder \(title) not found")
+        }
+        match.calendar = destination
+        do {
+            try store.save(match, commit: true)
+        } catch {
+            throw MacverbsError.system(
+                "EventKit save failed: \(error.localizedDescription)"
+            )
+        }
+        return ReminderMoved(moved: title, from: fromList, to: toList)
+    }
+
+    /// Edit due / priority / notes on first incomplete title match.
+    ///
+    /// At least one of `due`, `priority`, or `notes` must be non-empty (oracle).
+    /// `priority` may be `none` to clear. Empty `listName` → default list.
+    static func edit(
+        store: EKEventStore,
+        title: String,
+        listName: String?,
+        due: String,
+        priority: String,
+        notes: String
+    ) throws -> ReminderEdited {
+        if due.isEmpty && priority.isEmpty && notes.isEmpty {
+            throw MacverbsError.domain(
+                "nothing to edit: provide --due, --priority, or --notes"
+            )
+        }
+        let reminder = try findIncomplete(store: store, title: title, listName: listName)
+        if !due.isEmpty {
+            guard let dueComponents = try ReminderFields.parseDue(due) else {
+                throw MacverbsError.domain(
+                    "invalid due '\(due)' (expected YYYY-MM-DD or YYYY-MM-DD HH:MM)"
+                )
+            }
+            reminder.dueDateComponents = dueComponents
+        }
+        if !priority.isEmpty {
+            reminder.priority = try ReminderFields.priorityValue(priority)
+        }
+        if !notes.isEmpty {
+            reminder.notes = notes
+        }
+        do {
+            try store.save(reminder, commit: true)
+        } catch {
+            throw MacverbsError.system(
+                "EventKit save failed: \(error.localizedDescription)"
+            )
+        }
+        return ReminderEdited(edited: title)
+    }
+
+    /// Ensure a reminder list exists (idempotent; create when missing).
+    static func ensureList(
+        store: EKEventStore,
+        name: String
+    ) throws -> ReminderListEnsured {
+        let existing = store.calendars(for: .reminder)
+        if existing.contains(where: { $0.title == name }) {
+            return ReminderListEnsured(list: name)
+        }
+        let calendar = EKCalendar(for: .reminder, eventStore: store)
+        calendar.title = name
+        if let defaultList = store.defaultCalendarForNewReminders() {
+            calendar.source = defaultList.source
+        } else if let source = store.sources.first(where: { $0.sourceType == .local })
+            ?? store.sources.first(where: { $0.sourceType == .calDAV })
+            ?? store.sources.first
+        {
+            calendar.source = source
+        } else {
+            throw MacverbsError.domain("no calendar source available for new list")
+        }
+        do {
+            try store.saveCalendar(calendar, commit: true)
+        } catch {
+            throw MacverbsError.system(
+                "EventKit saveCalendar failed: \(error.localizedDescription)"
+            )
+        }
+        return ReminderListEnsured(list: name)
+    }
+
     /// Resolve list by exact title; empty/nil → default (or first) list.
     static func resolveList(store: EKEventStore, listName: String?) throws -> EKCalendar {
         let all = store.calendars(for: .reminder)
@@ -422,6 +548,9 @@ struct RemindersCommand: ParsableCommand {
             RemindersListCommand.self,
             RemindersAddCommand.self,
             RemindersDoneCommand.self,
+            RemindersMoveCommand.self,
+            RemindersEditCommand.self,
+            RemindersMklistCommand.self,
             RemindersDeleteCommand.self,
         ]
     )
@@ -526,6 +655,95 @@ struct RemindersDoneCommand: ParsableCommand {
         let listName: String? = list.isEmpty ? nil : list
         let result = try client.completeReminder(title: title, listName: listName)
         try CLIOutput.emit(result, text: RemindersFormat.done)
+    }
+}
+
+/// `macverbs reminders move TITLE --from SRC --to DST`
+struct RemindersMoveCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "move",
+        abstract: "Move a reminder between lists (exact title match)."
+    )
+
+    @Argument(help: "Reminder title (exact match).")
+    var title: String
+
+    @Option(name: .customLong("from"), help: "Source list name (required).")
+    var from: String
+
+    @Option(name: .customLong("to"), help: "Destination list name (required).")
+    var to: String
+
+    func run() throws {
+        let client = BackendClients.eventStore
+        try client.ensureAccess(for: .reminder)
+        let result = try client.moveReminder(
+            title: title,
+            fromList: from,
+            toList: to
+        )
+        try CLIOutput.emit(result, text: RemindersFormat.moved)
+    }
+}
+
+/// `macverbs reminders edit TITLE [--list] [--due] [--priority] [--notes]`
+struct RemindersEditCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "edit",
+        abstract: "Edit due date, priority, and/or notes (exact title match)."
+    )
+
+    @Argument(help: "Reminder title (exact match).")
+    var title: String
+
+    @Option(name: .long, help: "List name. Empty = default list.")
+    var list: String = ""
+
+    @Option(name: .long, help: "Due date: YYYY-MM-DD or YYYY-MM-DD HH:MM.")
+    var due: String = ""
+
+    @Option(
+        name: .long,
+        help: "Priority: high, medium, low, or none (clear)."
+    )
+    var priority: String = ""
+
+    @Option(name: .long, help: "Notes / body.")
+    var notes: String = ""
+
+    func run() throws {
+        if !priority.isEmpty {
+            _ = try ReminderFields.priorityValue(priority)
+        }
+        let client = BackendClients.eventStore
+        try client.ensureAccess(for: .reminder)
+        let listName: String? = list.isEmpty ? nil : list
+        let result = try client.editReminder(
+            title: title,
+            listName: listName,
+            due: due,
+            priority: priority,
+            notes: notes
+        )
+        try CLIOutput.emit(result, text: RemindersFormat.edited)
+    }
+}
+
+/// `macverbs reminders mklist NAME` — create list if missing (idempotent).
+struct RemindersMklistCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "mklist",
+        abstract: "Ensure a reminder list exists (create if missing)."
+    )
+
+    @Argument(help: "List name.")
+    var name: String
+
+    func run() throws {
+        let client = BackendClients.eventStore
+        try client.ensureAccess(for: .reminder)
+        let result = try client.ensureReminderList(name: name)
+        try CLIOutput.emit(result, text: RemindersFormat.listEnsured)
     }
 }
 

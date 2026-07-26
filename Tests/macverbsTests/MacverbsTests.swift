@@ -369,6 +369,72 @@ final class MockEventStoreClient: EventStoreClient, @unchecked Sendable {
         return ReminderDeleted(deleted: title)
     }
 
+    func moveReminder(
+        title: String,
+        fromList: String,
+        toList: String
+    ) throws -> ReminderMoved {
+        if let dataError {
+            throw dataError
+        }
+        try ensureKnownList(fromList)
+        try ensureKnownList(toList)
+        guard
+            let index = reminderItems.firstIndex(where: {
+                $0.title == title && $0.list == fromList
+            })
+        else {
+            throw MacverbsError.domain("reminder \(title) not found")
+        }
+        var item = reminderItems[index]
+        item.list = toList
+        reminderItems[index] = item
+        return ReminderMoved(moved: title, from: fromList, to: toList)
+    }
+
+    func editReminder(
+        title: String,
+        listName: String?,
+        due: String,
+        priority: String,
+        notes: String
+    ) throws -> ReminderEdited {
+        if let dataError {
+            throw dataError
+        }
+        if due.isEmpty && priority.isEmpty && notes.isEmpty {
+            throw MacverbsError.domain(
+                "nothing to edit: provide --due, --priority, or --notes"
+            )
+        }
+        let index = try findIncompleteIndex(title: title, listName: listName)
+        var item = reminderItems[index]
+        if !due.isEmpty {
+            let dueComponents = try ReminderFields.parseDue(due)
+            item.due = ReminderFields.dueString(from: dueComponents)
+        }
+        if !priority.isEmpty {
+            _ = try ReminderFields.priorityValue(priority)
+            item.priority = priority == "none" ? "" : priority
+        }
+        if !notes.isEmpty {
+            item.notes = notes
+        }
+        reminderItems[index] = item
+        return ReminderEdited(edited: title)
+    }
+
+    func ensureReminderList(name: String) throws -> ReminderListEnsured {
+        if let dataError {
+            throw dataError
+        }
+        let known = Set(reminderListInfos.map(\.name)).union(Set(reminderItems.map(\.list)))
+        if !known.contains(name) {
+            reminderListInfos.append(ReminderListInfo(name: name, pending: 0))
+        }
+        return ReminderListEnsured(list: name)
+    }
+
     private func resolveListName(_ listName: String?) throws -> String {
         if let listName, !listName.isEmpty {
             try ensureKnownList(listName)
@@ -559,6 +625,69 @@ final class FakeEventKitBacking: EventKitBacking, @unchecked Sendable {
             throw MacverbsError.domain("reminder \(title) not found")
         }
         return ReminderDeleted(deleted: title)
+    }
+
+    func moveReminder(
+        title: String,
+        fromList: String,
+        toList: String
+    ) throws -> ReminderMoved {
+        let known = Set(reminderListInfos.map(\.name)).union(Set(reminderItems.map(\.list)))
+        if !known.contains(fromList) {
+            throw MacverbsError.domain("list \(fromList) not found")
+        }
+        if !known.contains(toList) {
+            throw MacverbsError.domain("list \(toList) not found")
+        }
+        guard reminderItems.contains(where: { $0.title == title && $0.list == fromList })
+        else {
+            throw MacverbsError.domain("reminder \(title) not found")
+        }
+        return ReminderMoved(moved: title, from: fromList, to: toList)
+    }
+
+    func editReminder(
+        title: String,
+        listName: String?,
+        due: String,
+        priority: String,
+        notes: String
+    ) throws -> ReminderEdited {
+        if due.isEmpty && priority.isEmpty && notes.isEmpty {
+            throw MacverbsError.domain(
+                "nothing to edit: provide --due, --priority, or --notes"
+            )
+        }
+        if !due.isEmpty {
+            _ = try ReminderFields.parseDue(due)
+        }
+        if !priority.isEmpty {
+            _ = try ReminderFields.priorityValue(priority)
+        }
+        if let listName, !listName.isEmpty {
+            let known = Set(reminderListInfos.map(\.name)).union(Set(reminderItems.map(\.list)))
+            if !known.contains(listName) {
+                throw MacverbsError.domain("list \(listName) not found")
+            }
+        }
+        let scope: [ReminderItem]
+        if let listName, !listName.isEmpty {
+            scope = reminderItems.filter { $0.list == listName }
+        } else {
+            scope = reminderItems
+        }
+        guard scope.contains(where: { $0.title == title }) else {
+            throw MacverbsError.domain("reminder \(title) not found")
+        }
+        return ReminderEdited(edited: title)
+    }
+
+    func ensureReminderList(name: String) throws -> ReminderListEnsured {
+        let known = Set(reminderListInfos.map(\.name))
+        if !known.contains(name) {
+            reminderListInfos.append(ReminderListInfo(name: name, pending: 0))
+        }
+        return ReminderListEnsured(list: name)
     }
 }
 
@@ -2094,6 +2223,8 @@ private func utcDate(
     #expect(mailHelp.contains("unread"))
     #expect(mailHelp.contains("list"))
     #expect(mailHelp.contains("read"))
+    #expect(mailHelp.contains("archive"))
+    #expect(mailHelp.contains("delete"))
 }
 
 // MARK: - Mail list + read (T15)
@@ -2377,6 +2508,324 @@ private func utcDate(
     }
 }
 
+// MARK: - Mail archive + delete (T16)
+
+@Test func mailScriptsMoveArchiveUsesArchiveCandidatesAndRecount() {
+    let s = MailScripts.move(
+        account: "Work",
+        ids: ["<a@x>", "<b@x>"],
+        target: .archive
+    )
+    #expect(s.contains("tell application \"Mail\""))
+    #expect(s.contains("[Gmail]/Todos os e-mails"))
+    #expect(s.contains("Archive"))
+    #expect(!s.contains("Itens Excluídos"))
+    #expect(s.contains(#"(name of acct) is "Work""#))
+    #expect(s.contains(#"{"<a@x>", "<b@x>"}"#))
+    #expect(s.contains("set reqCount to (count of idList)"))
+    #expect(s.contains("set remaining to"))
+    #expect(s.contains("set matches to (messages of ib whose message id is ms)"))
+    #expect(s.contains("repeat with m in matches"))
+    #expect(s.contains("move m to tb"))
+    #expect(s.contains("delay 1"))
+}
+
+@Test func mailScriptsMoveArchiveHasGmailGuard() {
+    let s = MailScripts.move(account: "Acme", ids: ["<a@x>"], target: .archive)
+    #expect(s.contains(MailScripts.archiveUnsupportedSentinel))
+    #expect(
+        s.contains(
+            #"tbName contains "Todos os e-mails" or tbName contains "All Mail""#
+        )
+    )
+}
+
+@Test func mailScriptsMoveDeleteHasNoGmailGuardAndUsesTrash() {
+    let s = MailScripts.move(account: "Personal", ids: ["<c@x>"], target: .delete)
+    #expect(!s.contains(MailScripts.archiveUnsupportedSentinel))
+    #expect(s.contains("[Gmail]/Lixeira"))
+    #expect(s.contains("Itens Excluídos"))
+    #expect(s.contains("Deleted Messages"))
+    #expect(!s.contains("[Gmail]/Todos os e-mails"))
+}
+
+@Test func mailScriptsMoveEscapesQuotes() {
+    let s = MailScripts.move(account: #"a"b"#, ids: [#"i"d"#], target: .archive)
+    #expect(s.contains(#"(name of acct) is "a\"b""#))
+    #expect(s.contains(#""i\"d""#))
+}
+
+@Test func mailMoveParsesCounts() throws {
+    let fs = AppleScript.fieldSeparator
+    let out = "2\(fs)2\(fs)0"
+    let recorder = RecordingOsascriptProcess()
+    recorder.result = OsascriptProcessResult(exitStatus: 0, stdout: out, stderr: "")
+    let runner = OSAScriptRunner(process: recorder)
+    let r = try Mail.move(
+        account: "Work",
+        ids: ["<a>", "<b>"],
+        target: .archive,
+        runner: runner
+    )
+    #expect(
+        r
+            == MailMoveResult(
+                account: "Work",
+                action: "archive",
+                moved: 2,
+                requested: 2,
+                remaining: 0,
+                unsupported: nil
+            )
+    )
+    #expect(recorder.scripts.count == 1)
+    #expect(recorder.scripts[0].contains(#"(name of acct) is "Work""#))
+}
+
+@Test func mailMoveReportsRemaining() throws {
+    let fs = AppleScript.fieldSeparator
+    let r = try Mail.move(
+        account: "Personal",
+        ids: ["<a>", "<b>"],
+        target: .delete,
+        runner: MockScriptRunner(stdout: "2\(fs)1\(fs)1")
+    )
+    #expect(r.moved == 1)
+    #expect(r.remaining == 1)
+    #expect(r.action == "delete")
+    #expect(r.unsupported == nil)
+}
+
+@Test func mailMoveEmptyScriptOutputDefaultsToZeros() throws {
+    let r = try Mail.move(
+        account: "Personal",
+        ids: ["<a>"],
+        target: .archive,
+        runner: MockScriptRunner(stdout: "")
+    )
+    #expect(r.requested == 0)
+    #expect(r.moved == 0)
+    #expect(r.remaining == 0)
+}
+
+@Test func mailMoveRequiresAccount() {
+    do {
+        _ = try Mail.move(
+            account: "",
+            ids: ["<a>"],
+            target: .archive,
+            runner: MockScriptRunner(stdout: "1\u{001F}1\u{001F}0")
+        )
+        Issue.record("expected domain error for empty account")
+    } catch let error as MacverbsError {
+        #expect(error == .domain("--account is required for archive/delete"))
+    } catch {
+        Issue.record("unexpected error: \(error)")
+    }
+}
+
+@Test func mailMoveRequiresAtLeastOneId() {
+    do {
+        _ = try Mail.move(
+            account: "Work",
+            ids: [],
+            target: .delete,
+            runner: MockScriptRunner(stdout: "")
+        )
+        Issue.record("expected domain error for empty ids")
+    } catch let error as MacverbsError {
+        #expect(error == .domain("at least one message id is required"))
+    } catch {
+        Issue.record("unexpected error: \(error)")
+    }
+}
+
+@Test func mailMoveArchiveGmailUnsupported() throws {
+    let fs = AppleScript.fieldSeparator
+    let out = "\(MailScripts.archiveUnsupportedSentinel)\(fs)[Gmail]/Todos os e-mails"
+    let r = try Mail.archive(
+        account: "Acme",
+        ids: ["<a>", "<b>"],
+        runner: MockScriptRunner(stdout: out)
+    )
+    #expect(r.moved == 0)
+    #expect(r.remaining == 2)
+    #expect(r.requested == 2)
+    #expect(r.action == "archive")
+    let reason = try #require(r.unsupported)
+    #expect(reason.contains("Gmail"))
+    #expect(reason.contains("Todos os e-mails"))
+    #expect(reason.contains("not supported"))
+}
+
+@Test func mailFormatMoveText() {
+    #expect(
+        Mail.formatMove(
+            MailMoveResult(
+                account: "Work",
+                action: "archive",
+                moved: 3,
+                requested: 3,
+                remaining: 0,
+                unsupported: nil
+            )
+        ) == "Work: 3/3 archived"
+    )
+    let partial = Mail.formatMove(
+        MailMoveResult(
+            account: "Personal",
+            action: "delete",
+            moved: 1,
+            requested: 2,
+            remaining: 1,
+            unsupported: nil
+        )
+    )
+    #expect(partial.contains("Personal: 1/2 deleted"))
+    #expect(partial.contains("1 remaining in inbox"))
+    let unsupported = Mail.formatMove(
+        MailMoveResult(
+            account: "Acme",
+            action: "archive",
+            moved: 0,
+            requested: 1,
+            remaining: 1,
+            unsupported: "archive is not supported on this account (Gmail)"
+        )
+    )
+    #expect(unsupported == "Acme: archive is not supported on this account (Gmail)")
+    #expect(!unsupported.contains("archived"))
+}
+
+@Test func mailArchiveCommandJsonOnStdout() throws {
+    try withRedirectedStdio { pipes in
+        let fs = AppleScript.fieldSeparator
+        BackendClients.scriptRunner = MockScriptRunner(stdout: "1\(fs)1\(fs)0")
+        defer { BackendClients.scriptRunner = OSAScriptRunner() }
+        let code = MacverbsApp.run(
+            arguments: ["--json", "mail", "archive", "<a>", "--account", "Work"]
+        )
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        let obj = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any]
+        #expect(obj?["moved"] as? Int == 1)
+        #expect(obj?["requested"] as? Int == 1)
+        #expect(obj?["remaining"] as? Int == 0)
+        #expect(obj?["account"] as? String == "Work")
+        #expect(obj?["action"] as? String == "archive")
+        #expect(obj?["unsupported"] == nil)
+        // Sorted keys: account, action, moved, remaining, requested
+        if let accountRange = text.range(of: "\"account\""),
+            let actionRange = text.range(of: "\"action\""),
+            let movedRange = text.range(of: "\"moved\"")
+        {
+            #expect(accountRange.lowerBound < actionRange.lowerBound)
+            #expect(actionRange.lowerBound < movedRange.lowerBound)
+        } else {
+            Issue.record("expected archive JSON keys")
+        }
+        let _errEmpty = try pipes.readError()
+        #expect(_errEmpty.isEmpty)
+    }
+}
+
+@Test func mailArchiveCommandTextOnStdout() throws {
+    try withRedirectedStdio { pipes in
+        let fs = AppleScript.fieldSeparator
+        BackendClients.scriptRunner = MockScriptRunner(stdout: "2\(fs)2\(fs)0")
+        defer { BackendClients.scriptRunner = OSAScriptRunner() }
+        let code = MacverbsApp.run(
+            arguments: ["mail", "archive", "<a>", "<b>", "--account", "Work"]
+        )
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        #expect(text.contains("Work: 2/2 archived"))
+        let _errEmpty = try pipes.readError()
+        #expect(_errEmpty.isEmpty)
+    }
+}
+
+@Test func mailDeleteCommandWithRemainingText() throws {
+    try withRedirectedStdio { pipes in
+        let fs = AppleScript.fieldSeparator
+        BackendClients.scriptRunner = MockScriptRunner(stdout: "1\(fs)0\(fs)1")
+        defer { BackendClients.scriptRunner = OSAScriptRunner() }
+        let code = MacverbsApp.run(
+            arguments: ["mail", "delete", "<a>", "--account", "Personal"]
+        )
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        #expect(text.contains("Personal: 0/1 deleted"))
+        #expect(text.contains("remaining in inbox"))
+        let _errEmpty = try pipes.readError()
+        #expect(_errEmpty.isEmpty)
+    }
+}
+
+@Test func mailArchiveRequiresAccountUsageExit64() throws {
+    try withRedirectedStdio { pipes in
+        let code = MacverbsApp.run(arguments: ["mail", "archive", "<a>"])
+        #expect(code == ExitCodes.usage)
+        let _outEmpty = try pipes.readOutput()
+        #expect(_outEmpty.isEmpty)
+    }
+}
+
+@Test func mailDeleteRequiresAccountUsageExit64() throws {
+    try withRedirectedStdio { pipes in
+        let code = MacverbsApp.run(arguments: ["mail", "delete", "<a>"])
+        #expect(code == ExitCodes.usage)
+        let _outEmpty = try pipes.readOutput()
+        #expect(_outEmpty.isEmpty)
+    }
+}
+
+@Test func mailArchiveGmailReportsUnsupported() throws {
+    try withRedirectedStdio { pipes in
+        let fs = AppleScript.fieldSeparator
+        let out =
+            "\(MailScripts.archiveUnsupportedSentinel)\(fs)[Gmail]/Todos os e-mails"
+        BackendClients.scriptRunner = MockScriptRunner(stdout: out)
+        defer { BackendClients.scriptRunner = OSAScriptRunner() }
+        let code = MacverbsApp.run(
+            arguments: ["mail", "archive", "<a>", "--account", "Acme"]
+        )
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        #expect(text.contains("not supported"))
+        #expect(text.contains("Gmail"))
+        #expect(!text.contains("archived"))
+        let _errEmpty = try pipes.readError()
+        #expect(_errEmpty.isEmpty)
+    }
+}
+
+@Test func mailArchiveGmailUnsupportedJsonOmitsNullUnsupportedKeyShape() throws {
+    try withRedirectedStdio { pipes in
+        let fs = AppleScript.fieldSeparator
+        let out =
+            "\(MailScripts.archiveUnsupportedSentinel)\(fs)[Gmail]/All Mail"
+        BackendClients.scriptRunner = MockScriptRunner(stdout: out)
+        defer { BackendClients.scriptRunner = OSAScriptRunner() }
+        let code = MacverbsApp.run(
+            arguments: [
+                "--json", "mail", "archive", "<a>", "--account", "Acme",
+            ]
+        )
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        let obj = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any]
+        #expect(obj?["moved"] as? Int == 0)
+        #expect(obj?["remaining"] as? Int == 1)
+        #expect(obj?["requested"] as? Int == 1)
+        let unsupported = obj?["unsupported"] as? String
+        #expect(unsupported?.contains("Gmail") == true)
+        #expect(unsupported?.contains("All Mail") == true)
+        let _errEmpty = try pipes.readError()
+        #expect(_errEmpty.isEmpty)
+    }
+}
+
 // MARK: - Reminders lists + list (T09)
 
 @Test func reminderPriorityNameMapping() {
@@ -2623,6 +3072,9 @@ private func utcDate(
     #expect(remHelp.contains("list"))
     #expect(remHelp.contains("add"))
     #expect(remHelp.contains("done"))
+    #expect(remHelp.contains("move"))
+    #expect(remHelp.contains("edit"))
+    #expect(remHelp.contains("mklist"))
     #expect(remHelp.contains("delete"))
 }
 
@@ -2796,6 +3248,21 @@ private func utcDate(
     }
     #expect(throws: MacverbsError.self) {
         try stub.deleteReminder(title: "T", listName: nil)
+    }
+    #expect(throws: MacverbsError.self) {
+        try stub.moveReminder(title: "T", fromList: "A", toList: "B")
+    }
+    #expect(throws: MacverbsError.self) {
+        try stub.editReminder(
+            title: "T",
+            listName: nil,
+            due: "2026-07-06",
+            priority: "",
+            notes: ""
+        )
+    }
+    #expect(throws: MacverbsError.self) {
+        try stub.ensureReminderList(name: "Work")
     }
 }
 
@@ -3033,6 +3500,387 @@ private func utcDate(
         #expect(out.contains("created: CycleDel"))
         #expect(out.contains("deleted: CycleDel"))
     }
+}
+
+// MARK: - Reminders move / edit / mklist (T11)
+
+@Test func remindersFormatMoveEditMklistResults() {
+    #expect(
+        RemindersFormat.moved(
+            ReminderMoved(moved: "Ship", from: "Work", to: "Personal")
+        ) == "moved: Ship (Work → Personal)"
+    )
+    #expect(RemindersFormat.edited(ReminderEdited(edited: "Ship")) == "edited: Ship")
+    #expect(
+        RemindersFormat.listEnsured(ReminderListEnsured(list: "Acme"))
+            == "list ensured: Acme"
+    )
+}
+
+@Test func mockReminderMoveBetweenLists() throws {
+    let mock = MockEventStoreClient(
+        calendar: .fullAccess,
+        reminders: .fullAccess,
+        reminderListInfos: [
+            ReminderListInfo(name: "Work", pending: 1),
+            ReminderListInfo(name: "Personal", pending: 0),
+        ],
+        reminderItems: [
+            ReminderItem(
+                title: "Standup prep",
+                due: "2026-07-06 14:30",
+                priority: "high",
+                list: "Work",
+                notes: "bring laptop"
+            )
+        ]
+    )
+    let moved = try mock.moveReminder(
+        title: "Standup prep",
+        fromList: "Work",
+        toList: "Personal"
+    )
+    #expect(moved == ReminderMoved(moved: "Standup prep", from: "Work", to: "Personal"))
+    #expect(try mock.incompleteReminders(listName: "Work").isEmpty)
+    let personal = try mock.incompleteReminders(listName: "Personal")
+    #expect(personal.count == 1)
+    #expect(personal[0].title == "Standup prep")
+    #expect(personal[0].priority == "high")
+}
+
+@Test func mockReminderMoveMissingReminderOrList() throws {
+    let mock = MockEventStoreClient(
+        calendar: .fullAccess,
+        reminders: .fullAccess,
+        reminderListInfos: [
+            ReminderListInfo(name: "Work", pending: 0),
+            ReminderListInfo(name: "Personal", pending: 0),
+        ]
+    )
+    do {
+        _ = try mock.moveReminder(title: "Missing", fromList: "Work", toList: "Personal")
+        Issue.record("expected throw for missing reminder")
+    } catch let error as MacverbsError {
+        #expect(error == .domain("reminder Missing not found"))
+    } catch {
+        Issue.record("unexpected \(error)")
+    }
+    do {
+        _ = try mock.moveReminder(title: "X", fromList: "Acme", toList: "Work")
+        Issue.record("expected throw for missing source list")
+    } catch let error as MacverbsError {
+        #expect(error == .domain("list Acme not found"))
+    } catch {
+        Issue.record("unexpected \(error)")
+    }
+}
+
+@Test func mockReminderEditDuePriorityNotes() throws {
+    let mock = MockEventStoreClient(
+        calendar: .fullAccess,
+        reminders: .fullAccess,
+        reminderListInfos: [ReminderListInfo(name: "Work", pending: 1)],
+        reminderItems: [
+            ReminderItem(
+                title: "Standup prep",
+                due: "",
+                priority: "high",
+                list: "Work",
+                notes: "old"
+            )
+        ]
+    )
+    let edited = try mock.editReminder(
+        title: "Standup prep",
+        listName: "Work",
+        due: "2026-07-20 09:00",
+        priority: "medium",
+        notes: "updated context"
+    )
+    #expect(edited == ReminderEdited(edited: "Standup prep"))
+    let item = mock.reminderItems[0]
+    #expect(item.due == "2026-07-20 09:00")
+    #expect(item.priority == "medium")
+    #expect(item.notes == "updated context")
+
+    _ = try mock.editReminder(
+        title: "Standup prep",
+        listName: "Work",
+        due: "",
+        priority: "none",
+        notes: ""
+    )
+    #expect(mock.reminderItems[0].priority == "")
+}
+
+@Test func mockReminderEditRequiresChange() throws {
+    let mock = MockEventStoreClient(
+        calendar: .fullAccess,
+        reminders: .fullAccess,
+        reminderListInfos: [ReminderListInfo(name: "Work", pending: 1)],
+        reminderItems: [
+            ReminderItem(
+                title: "Ship",
+                due: "",
+                priority: "",
+                list: "Work",
+                notes: ""
+            )
+        ]
+    )
+    do {
+        _ = try mock.editReminder(
+            title: "Ship",
+            listName: "Work",
+            due: "",
+            priority: "",
+            notes: ""
+        )
+        Issue.record("expected throw when nothing to edit")
+    } catch let error as MacverbsError {
+        #expect(error.message.contains("nothing to edit"))
+        #expect(error.processExitCode == ExitCodes.domain)
+    } catch {
+        Issue.record("unexpected \(error)")
+    }
+}
+
+@Test func mockReminderMklistIdempotent() throws {
+    let mock = MockEventStoreClient(
+        calendar: .fullAccess,
+        reminders: .fullAccess,
+        reminderListInfos: [ReminderListInfo(name: "Work", pending: 0)]
+    )
+    let first = try mock.ensureReminderList(name: "Acme")
+    #expect(first == ReminderListEnsured(list: "Acme"))
+    #expect(mock.reminderListInfos.map(\.name).contains("Acme"))
+    let countAfterCreate = mock.reminderListInfos.count
+    let second = try mock.ensureReminderList(name: "Acme")
+    #expect(second == ReminderListEnsured(list: "Acme"))
+    #expect(mock.reminderListInfos.count == countAfterCreate)
+    let existing = try mock.ensureReminderList(name: "Work")
+    #expect(existing == ReminderListEnsured(list: "Work"))
+}
+
+@Test func remindersMoveCommandJsonOnStdout() throws {
+    try withRedirectedStdio { pipes in
+        let mock = MockEventStoreClient(
+            calendar: .fullAccess,
+            reminders: .fullAccess,
+            reminderListInfos: [
+                ReminderListInfo(name: "Work", pending: 1),
+                ReminderListInfo(name: "Personal", pending: 0),
+            ],
+            reminderItems: [
+                ReminderItem(
+                    title: "Ship",
+                    due: "",
+                    priority: "",
+                    list: "Work",
+                    notes: ""
+                )
+            ]
+        )
+        BackendClients.eventStore = mock
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(
+            arguments: [
+                "--json", "reminders", "move", "Ship",
+                "--from", "Work",
+                "--to", "Personal",
+            ]
+        )
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        let data = Data(text.utf8)
+        let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        #expect(obj?["moved"] as? String == "Ship")
+        #expect(obj?["from"] as? String == "Work")
+        #expect(obj?["to"] as? String == "Personal")
+        #expect(mock.reminderItems[0].list == "Personal")
+        #expect(try pipes.readError().isEmpty)
+    }
+}
+
+@Test func remindersEditCommandJsonAndUpdatesItem() throws {
+    try withRedirectedStdio { pipes in
+        let mock = MockEventStoreClient(
+            calendar: .fullAccess,
+            reminders: .fullAccess,
+            reminderListInfos: [ReminderListInfo(name: "Work", pending: 1)],
+            reminderItems: [
+                ReminderItem(
+                    title: "Ship",
+                    due: "",
+                    priority: "high",
+                    list: "Work",
+                    notes: ""
+                )
+            ]
+        )
+        BackendClients.eventStore = mock
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(
+            arguments: [
+                "--json", "reminders", "edit", "Ship",
+                "--list", "Work",
+                "--due", "2026-07-20 09:00",
+                "--priority", "low",
+                "--notes", "ship notes",
+            ]
+        )
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        let data = Data(text.utf8)
+        let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        #expect(obj?["edited"] as? String == "Ship")
+        #expect(mock.reminderItems[0].due == "2026-07-20 09:00")
+        #expect(mock.reminderItems[0].priority == "low")
+        #expect(mock.reminderItems[0].notes == "ship notes")
+        #expect(try pipes.readError().isEmpty)
+    }
+}
+
+@Test func remindersEditCommandNothingToEditExit1() throws {
+    try withRedirectedStdio { pipes in
+        let mock = MockEventStoreClient(
+            calendar: .fullAccess,
+            reminders: .fullAccess,
+            reminderListInfos: [ReminderListInfo(name: "Work", pending: 1)],
+            reminderItems: [
+                ReminderItem(
+                    title: "Ship",
+                    due: "",
+                    priority: "",
+                    list: "Work",
+                    notes: ""
+                )
+            ]
+        )
+        BackendClients.eventStore = mock
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(
+            arguments: ["reminders", "edit", "Ship", "--list", "Work"]
+        )
+        #expect(code == ExitCodes.domain)
+        let err = try pipes.readError()
+        #expect(err.contains("nothing to edit"))
+        #expect(try pipes.readOutput().isEmpty)
+    }
+}
+
+@Test func remindersMklistCommandJsonIdempotent() throws {
+    try withRedirectedStdio { pipes in
+        let mock = MockEventStoreClient(
+            calendar: .fullAccess,
+            reminders: .fullAccess,
+            reminderListInfos: [ReminderListInfo(name: "Work", pending: 0)]
+        )
+        BackendClients.eventStore = mock
+        defer { BackendClients.resetDefaults() }
+
+        let code1 = MacverbsApp.run(
+            arguments: ["--json", "reminders", "mklist", "Acme"]
+        )
+        #expect(code1 == ExitCodes.success)
+        let code2 = MacverbsApp.run(
+            arguments: ["--json", "reminders", "mklist", "Acme"]
+        )
+        #expect(code2 == ExitCodes.success)
+        #expect(mock.reminderListInfos.filter { $0.name == "Acme" }.count == 1)
+        let text = try pipes.readOutput()
+        #expect(text.contains("\"list\""))
+        #expect(text.contains("Acme"))
+        #expect(try pipes.readError().isEmpty)
+    }
+}
+
+@Test func remindersMklistCommandText() throws {
+    try withRedirectedStdio { pipes in
+        let mock = MockEventStoreClient(
+            calendar: .fullAccess,
+            reminders: .fullAccess,
+            reminderListInfos: []
+        )
+        BackendClients.eventStore = mock
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(arguments: ["reminders", "mklist", "Personal"])
+        #expect(code == ExitCodes.success)
+        let out = try pipes.readOutput()
+        #expect(out.contains("list ensured: Personal"))
+        let err = try pipes.readError()
+        #expect(err.isEmpty)
+    }
+}
+
+@Test func remindersMoveCommandMissingExit1() throws {
+    try withRedirectedStdio { pipes in
+        let mock = MockEventStoreClient(
+            calendar: .fullAccess,
+            reminders: .fullAccess,
+            reminderListInfos: [
+                ReminderListInfo(name: "Work", pending: 0),
+                ReminderListInfo(name: "Personal", pending: 0),
+            ]
+        )
+        BackendClients.eventStore = mock
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(
+            arguments: [
+                "reminders", "move", "Missing",
+                "--from", "Work",
+                "--to", "Personal",
+            ]
+        )
+        #expect(code == ExitCodes.domain)
+        let err = try pipes.readError()
+        #expect(err.contains("reminder Missing not found"))
+        let out = try pipes.readOutput()
+        #expect(out.isEmpty)
+    }
+}
+
+@Test func ekClientDelegatesMoveEditMklistToFakeBacking() throws {
+    let fake = FakeEventKitBacking(
+        calendar: .fullAccess,
+        reminders: .fullAccess,
+        reminderListInfos: [
+            ReminderListInfo(name: "Work", pending: 1),
+            ReminderListInfo(name: "Personal", pending: 0),
+        ],
+        reminderItems: [
+            ReminderItem(
+                title: "Ship",
+                due: "",
+                priority: "",
+                list: "Work",
+                notes: ""
+            )
+        ]
+    )
+    let client = EKEventStoreClient(backing: fake)
+    let moved = try client.moveReminder(
+        title: "Ship",
+        fromList: "Work",
+        toList: "Personal"
+    )
+    #expect(moved.moved == "Ship")
+    let edited = try client.editReminder(
+        title: "Ship",
+        listName: "Work",
+        due: "2026-07-06",
+        priority: "",
+        notes: ""
+    )
+    #expect(edited.edited == "Ship")
+    let ensured = try client.ensureReminderList(name: "Acme")
+    #expect(ensured.list == "Acme")
+    #expect(fake.reminderListInfos.map(\.name).contains("Acme"))
 }
 
 // MARK: - Stdio / global backend test helpers
