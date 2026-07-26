@@ -59,6 +59,16 @@ mise run check               # format-check + build + test
 
 Agent instructions: **[AGENTS.md](AGENTS.md)**. Task loop: `docs/ROADMAP.md` + workflow `implement-task`.
 
+## CI
+
+| Workflow | When | Runner | What |
+|----------|------|--------|------|
+| **CI** | push/PR → `main` | **Linux** | `swift format lint` only (cheap) |
+| **macOS check** | **manual** (`workflow_dispatch`) | macOS | format + `swift build` + `swift test` |
+
+Real gate for agents and day-to-day: **`mise run check` on a Mac** (EventKit/osascript are not validated on Linux).  
+Trigger macOS CI: GitHub → Actions → **macOS check** → Run workflow.
+
 ## Not this project
 
 - Not affiliated with Apple Inc.

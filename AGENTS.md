@@ -53,6 +53,7 @@ mise run run -- --help
 - Compiler and `swift format` come from **Apple CLT/Xcode** on PATH (no third-party SwiftFormat/SwiftLint required).
 - Config dir: `MACVERBS_CONFIG_DIR` (default `~/.config/macverbs`). Never commit personal calendar UIDs or account names (Vert, PYO, …).
 - Before claiming a task done: **`mise run check` must pass** (includes format/lint).
+- **GitHub CI:** Linux job on every push (format only). Full macOS build+test is **manual** (`macos-check` workflow) — do not assume Actions validates EventKit/Mail. Prefer local `mise run check`.
 
 ## Workflow loop
 

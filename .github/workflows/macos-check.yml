@@ -1,0 +1,42 @@
+# Expensive macOS runner — manual only.
+# Use for pre-release / when you want GitHub to re-run `swift build` + `swift test`.
+# Local gate remains: `mise run check` (format + build + test) on your Mac.
+name: macOS check
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Why run macOS CI (optional note)"
+        required: false
+        default: "manual verification"
+
+jobs:
+  build-test:
+    name: build + test (macos)
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Swift version
+        run: |
+          swift --version
+          swift format --version
+          echo "dispatch reason: ${{ inputs.reason }}"
+
+      - name: Format lint (strict)
+        run: |
+          swift format lint \
+            --configuration .swift-format \
+            --recursive --parallel --strict \
+            Sources Tests Package.swift
+
+      - name: Resolve packages
+        run: swift package resolve
+
+      - name: Build
+        run: swift build
+
+      - name: Test
+        run: swift test

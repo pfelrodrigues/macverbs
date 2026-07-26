@@ -1,3 +1,5 @@
+# Cheap default CI: Linux only.
+# Full macOS build+test is manual — see macos-check.yml (workflow_dispatch).
 name: CI
 
 on:
@@ -7,30 +9,23 @@ on:
     branches: [main]
 
 jobs:
-  check:
-    name: format + build + test
-    runs-on: macos-15
+  format:
+    name: swift format (linux)
+    runs-on: ubuntu-latest
+    container:
+      image: swift:6.0
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Swift version
+      - name: Swift / format version
         run: |
           swift --version
           swift format --version
 
-      - name: Format / lint (swift format)
+      - name: Format lint (strict)
         run: |
           swift format lint \
             --configuration .swift-format \
             --recursive --parallel --strict \
             Sources Tests Package.swift
-
-      - name: Resolve packages
-        run: swift package resolve
-
-      - name: Build
-        run: swift build
-
-      - name: Test
-        run: swift test
