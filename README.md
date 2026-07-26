@@ -2,9 +2,7 @@
 
 Agent-first CLI for **macOS Mail, Reminders, Notes, and Calendar**.
 
-Stable JSON verbs for coding agents and shell scripts. Distributed via Homebrew (personal tap first; homebrew-core later).
-
-> **Status:** under active development. Not installable via Homebrew yet.
+Stable JSON verbs for coding agents and shell scripts.
 
 ## Goals
 
@@ -13,72 +11,98 @@ Stable JSON verbs for coding agents and shell scripts. Distributed via Homebrew 
 - **Fast where it matters** — EventKit for Calendar and Reminders
 - **Safe** — least privilege, clear TCC/automation prompts, no surprise network calls
 
-## Architecture (planned)
+## Architecture
 
 | Domain | Backend |
 |--------|---------|
 | Calendar, Reminders | EventKit |
 | Mail, Notes | Apple Events (Open Scripting Architecture) |
 
-One binary, two backends. Not EventKit-only (Mail and Notes have no public EventKit surface).
+One binary, two backends. Mail and Notes have no public EventKit surface, so they use Apple Events.
+
+## Install
+
+### From source (today)
+
+Requires macOS with Swift (Xcode or Command Line Tools) and [mise](https://mise.jdx.dev/) optional for project tasks.
+
+```bash
+git clone https://github.com/pfelrodrigues/macverbs.git
+cd macverbs
+swift build -c release
+# binary: .build/release/macverbs
+cp .build/release/macverbs /usr/local/bin/   # or any dir on PATH
+macverbs --version
+macverbs doctor
+```
+
+### Homebrew (planned)
+
+Formula lives at [`Formula/macverbs.rb`](Formula/macverbs.rb). Public tap + tagged
+release are not published yet — see [`docs/RELEASE.md`](docs/RELEASE.md).
+
+```bash
+# after the tap is published:
+# brew install pfelrodrigues/macverbs/macverbs
+```
+
+Local formula smoke (from a checkout, no tap):
+
+```bash
+brew install --build-from-source ./Formula/macverbs.rb
+```
 
 ## Permissions (TCC)
 
-Calendar and Reminders use **EventKit**. The first verb that needs data calls
-`requestAccess` once per entity type (Calendar events / Reminders). macOS shows
-the system prompt; afterward the choice lives under:
+Calendar and Reminders use **EventKit**. The first verb that needs data may
+prompt once per entity type. Afterward:
 
 - **System Settings → Privacy & Security → Calendars**
 - **System Settings → Privacy & Security → Reminders**
 
-`macverbs doctor` reports authorization **without** prompting: EventKit
-(Calendar / Reminders) and Automation (Mail / Notes). Denied or restricted
-EventKit access yields domain errors (exit 1) with the same Settings path.
-Full access is required for list/read verbs; write-only is treated as
-insufficient.
+`macverbs doctor` reports authorization **without** prompting (EventKit +
+Automation for Mail/Notes). Denied access yields domain errors (exit 1) with
+Settings paths.
 
-Mail and Notes use **Apple Events** (Automation). Grant control for Mail /
-Notes when prompted, or under:
+Mail and Notes use **Apple Events** (Automation):
 
 - **System Settings → Privacy & Security → Automation**
 
-## Develop (mise)
+## Usage (sketch)
 
 ```bash
-cd ~/work/Pessoal/macverbs   # or your clone
+macverbs --json calendar list --days 7
+macverbs reminders list --list Inbox
+macverbs --json mail list --limit 20
+macverbs mail read '<message-id>' --account Work
+macverbs notes search "meeting"
+macverbs doctor
+```
+
+Global: `--json` **before** the subcommand. Exit codes: `0` ok, `1` domain,
+`2` system, `64` usage. Errors on stderr; successful JSON on stdout.
+
+## Develop
+
+```bash
 mise trust                   # once
-mise run setup               # install git pre-commit hooks
-mise run tasks-list          # roadmap status
-mise run next                # next automated task id
-mise run format              # Apple `swift format` (write)
-mise run format-check        # lint mode --strict
+mise run setup               # git hooks (swift format)
+mise run format
 mise run check               # format-check + build + test
 ```
 
-| Tool | Via |
-|------|-----|
-| Format + lint | Apple **`swift format`** (`.swift-format`) |
-| Hooks | `.githooks/pre-commit` → format staged + lint |
-
-Agent instructions: **[AGENTS.md](AGENTS.md)**. Task loop: `docs/ROADMAP.md` + workflow `implement-task`.
+See **[AGENTS.md](AGENTS.md)** for contributor conventions.
 
 ## CI
 
 | Workflow | When | Runner | What |
 |----------|------|--------|------|
-| **CI** | push/PR → `main` | **Linux** | `swift format lint` only (cheap) |
-| **macOS check** | **manual** (`workflow_dispatch`) | macOS | format + `swift build` + `swift test` |
+| **CI** | push/PR → `main` | **Linux** | `swift format lint` only |
+| **macOS check** | **manual** | macOS | format + build + test |
 
-Default PR gate: Linux format only. Full build/test: run **`mise run check` on a Mac**, or trigger **macOS check** manually (Actions → Run workflow).
+## Security
 
-## Install
-
-Coming soon:
-
-```bash
-# planned
-brew install pfelrodrigues/tap/macverbs
-```
+See [SECURITY.md](SECURITY.md) for how to report vulnerabilities.
 
 ## License
 
