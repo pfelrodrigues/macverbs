@@ -277,7 +277,7 @@ struct StubEventStoreClient: EventStoreClient {
 /// Injectable backends for CLI verbs and doctor.
 ///
 /// CLI entry is single-threaded; tests replace clients serially (same pattern as
-/// `CLIOutput.standardOutput`).
+/// `CLIOutput.outFile`).
 enum BackendClients {
     /// Production: real EventKit wrapper (T06).
     nonisolated(unsafe) static var eventStore: any EventStoreClient = EKEventStoreClient()

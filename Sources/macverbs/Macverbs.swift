@@ -90,7 +90,7 @@ enum MacverbsApp {
                 // Usage and other parser failures → stderr.
                 let line = text.hasSuffix("\n") ? text : text + "\n"
                 if let data = line.data(using: .utf8) {
-                    try? CLIOutput.standardError.write(contentsOf: data)
+                    try? CLIOutput.errFile.write(contentsOf: data)
                 }
             }
         }

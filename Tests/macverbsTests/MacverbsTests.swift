@@ -59,7 +59,7 @@ import Testing
 }
 
 @Test func usageErrorReturns64() throws {
-    // Parser failures write usage text via CLIOutput.standardError; redirect so
+    // Parser failures write usage text via CLIOutput.errFile; redirect so
     // parallel tests that capture stdio do not race on the shared handles.
     try withRedirectedStdio { _ in
         let code = MacverbsApp.run(arguments: ["--not-a-real-flag"])
@@ -1100,8 +1100,8 @@ private struct StdioPipes {
     }
 
     func restore() {
-        CLIOutput.standardOutput = .standardOutput
-        CLIOutput.standardError = .standardError
+        CLIOutput.outFile = .standardOutput
+        CLIOutput.errFile = .standardError
         outRead.closeFile()
         errRead.closeFile()
     }
@@ -1129,8 +1129,8 @@ private func withRedirectedStdio(_ body: (StdioPipes) throws -> Void) throws {
         outWrite: outPipe.fileHandleForWriting,
         errWrite: errPipe.fileHandleForWriting
     )
-    CLIOutput.standardOutput = pipes.outWrite
-    CLIOutput.standardError = pipes.errWrite
+    CLIOutput.outFile = pipes.outWrite
+    CLIOutput.errFile = pipes.errWrite
     defer { pipes.restore() }
     try body(pipes)
 }

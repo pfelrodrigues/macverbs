@@ -80,19 +80,19 @@ enum GlobalFlags {
 enum CLIOutput {
     /// Injectable for tests; defaults to process stdio.
     /// CLI is single-threaded at the entrypoint; tests redirect serially.
-    nonisolated(unsafe) static var standardOutput: FileHandle = .standardOutput
-    nonisolated(unsafe) static var standardError: FileHandle = .standardError
+    nonisolated(unsafe) static var outFile: FileHandle = .standardOutput
+    nonisolated(unsafe) static var errFile: FileHandle = .standardError
 
     /// Write a domain/system error line to stderr (`error: …`).
     static func writeError(_ message: String) {
         let line = "error: \(message)\n"
-        write(line, to: standardError)
+        write(line, to: errFile)
     }
 
     /// Write human text to stdout.
     static func writeText(_ text: String) {
         let line = text.hasSuffix("\n") ? text : text + "\n"
-        write(line, to: standardOutput)
+        write(line, to: outFile)
     }
 
     /// Write one JSON value to stdout (pretty-printed, stable key order).
@@ -100,9 +100,9 @@ enum CLIOutput {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         let data = try encoder.encode(value)
-        try standardOutput.write(contentsOf: data)
+        try outFile.write(contentsOf: data)
         if let newline = "\n".data(using: .utf8) {
-            try standardOutput.write(contentsOf: newline)
+            try outFile.write(contentsOf: newline)
         }
     }
 
