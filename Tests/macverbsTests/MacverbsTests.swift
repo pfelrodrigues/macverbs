@@ -38,10 +38,12 @@ import Testing
     #expect(help.contains("--json"))
 }
 
-@Test func runWithLeadingJsonStillSucceedsBare() {
+@Test func runWithLeadingJsonStillSucceedsBare() throws {
     // Bare + --json prints help and exits 0 (no domain verb yet).
-    let code = MacverbsApp.run(arguments: ["--json"])
-    #expect(code == ExitCodes.success)
+    try withRedirectedStdio { _ in
+        let code = MacverbsApp.run(arguments: ["--json"])
+        #expect(code == ExitCodes.success)
+    }
 }
 
 // MARK: - Exit codes
@@ -55,24 +57,36 @@ import Testing
     #expect(ExitCodes.usage == 64)
 }
 
-@Test func usageErrorReturns64() {
-    let code = MacverbsApp.run(arguments: ["--not-a-real-flag"])
-    #expect(code == ExitCodes.usage)
+@Test func usageErrorReturns64() throws {
+    // Parser failures write usage text via CLIOutput.standardError; redirect so
+    // parallel tests that capture stdio do not race on the shared handles.
+    try withRedirectedStdio { _ in
+        let code = MacverbsApp.run(arguments: ["--not-a-real-flag"])
+        #expect(code == ExitCodes.usage)
+    }
 }
 
-@Test func unexpectedArgumentReturns64() {
-    let code = MacverbsApp.run(arguments: ["bogus-domain"])
-    #expect(code == ExitCodes.usage)
+@Test func unexpectedArgumentReturns64() throws {
+    try withRedirectedStdio { _ in
+        let code = MacverbsApp.run(arguments: ["bogus-domain"])
+        #expect(code == ExitCodes.usage)
+    }
 }
 
-@Test func helpReturns0() {
-    let code = MacverbsApp.run(arguments: ["--help"])
-    #expect(code == ExitCodes.success)
+@Test func helpReturns0() throws {
+    // Help uses process stdout via ArgumentParser; still serialize against other
+    // MacverbsApp.run calls that share CLIOutput handles.
+    try withRedirectedStdio { _ in
+        let code = MacverbsApp.run(arguments: ["--help"])
+        #expect(code == ExitCodes.success)
+    }
 }
 
-@Test func versionReturns0() {
-    let code = MacverbsApp.run(arguments: ["--version"])
-    #expect(code == ExitCodes.success)
+@Test func versionReturns0() throws {
+    try withRedirectedStdio { _ in
+        let code = MacverbsApp.run(arguments: ["--version"])
+        #expect(code == ExitCodes.success)
+    }
 }
 
 @Test func domainErrorThroughAppReturns1AndStderr() throws {
@@ -150,6 +164,175 @@ private struct SamplePayload: Codable, Equatable {
         #expect(try pipes.readOutput().contains("Acme:1"))
         #expect(try pipes.readError().isEmpty)
     }
+}
+
+// MARK: - Seams (EventStoreClient + ScriptRunner)
+
+/// Test double for EventKit; never links EventKit.
+struct MockEventStoreClient: EventStoreClient {
+    var calendar: EventAuthorizationStatus = .notDetermined
+    var reminders: EventAuthorizationStatus = .notDetermined
+
+    func authorizationStatus(for entity: EventEntityType) -> EventAuthorizationStatus {
+        switch entity {
+        case .event:
+            calendar
+        case .reminder:
+            reminders
+        }
+    }
+}
+
+/// Test double for Apple Events; never runs osascript.
+struct MockScriptRunner: ScriptRunner {
+    var stdout: String = ""
+    var error: Error?
+
+    func run(script: String, timeout: TimeInterval) throws -> String {
+        if let error {
+            throw error
+        }
+        return stdout
+    }
+}
+
+@Test func mockEventStoreIsInjectable() {
+    let mock = MockEventStoreClient(calendar: .denied, reminders: .authorized)
+    #expect(mock.authorizationStatus(for: .event) == .denied)
+    #expect(mock.authorizationStatus(for: .reminder) == .authorized)
+}
+
+@Test func stubEventStoreNeverClaimsAccess() {
+    let stub = StubEventStoreClient()
+    for entity in EventEntityType.allCases {
+        #expect(stub.authorizationStatus(for: entity) == .unavailable)
+    }
+}
+
+@Test func mockScriptRunnerReturnsCannedOutput() throws {
+    let mock = MockScriptRunner(stdout: "Work\(UnicodeScalar(0x1F)!)")
+    #expect(try mock.run(script: "return 1", timeout: 1) == "Work\u{1F}")
+}
+
+@Test func stubScriptRunnerRefusesWithoutOsascript() {
+    let stub = StubScriptRunner()
+    #expect(throws: MacverbsError.self) {
+        try stub.run(script: "return 1", timeout: 1)
+    }
+}
+
+@Test func backendClientsDefaultsAreStubs() {
+    BackendClients.resetDefaults()
+    #expect(BackendClients.eventStore is StubEventStoreClient)
+    #expect(BackendClients.scriptRunner is StubScriptRunner)
+}
+
+@Test func backendClientsAcceptMocks() throws {
+    BackendClients.resetDefaults()
+    defer { BackendClients.resetDefaults() }
+
+    BackendClients.eventStore = MockEventStoreClient(
+        calendar: .fullAccess,
+        reminders: .fullAccess
+    )
+    BackendClients.scriptRunner = MockScriptRunner(stdout: "ok")
+
+    #expect(
+        BackendClients.eventStore.authorizationStatus(for: .event) == .fullAccess
+    )
+    #expect(try BackendClients.scriptRunner.run(script: "x", timeout: 1) == "ok")
+}
+
+// MARK: - doctor
+
+@Test func doctorProbeWithStubsListsMissing() {
+    let report = Doctor.probe(
+        eventStore: StubEventStoreClient(),
+        scriptRunner: StubScriptRunner(),
+        version: "0.1.0"
+    )
+    #expect(report.ok == false)
+    #expect(report.version == "0.1.0")
+    #expect(report.backends.eventKit.kind == "stub")
+    #expect(report.backends.eventKit.calendar == .unavailable)
+    #expect(report.backends.eventKit.reminders == .unavailable)
+    #expect(report.backends.appleEvents.kind == "stub")
+    #expect(report.backends.appleEvents.wired == false)
+    #expect(report.missing.contains { $0.contains("EventKit") })
+    #expect(report.missing.contains { $0.contains("ScriptRunner") })
+}
+
+@Test func doctorProbeWithMocksCanBeOk() {
+    let report = Doctor.probe(
+        eventStore: MockEventStoreClient(
+            calendar: .fullAccess,
+            reminders: .fullAccess
+        ),
+        scriptRunner: MockScriptRunner(stdout: ""),
+        version: "9.9.9"
+    )
+    #expect(report.ok == true)
+    #expect(report.missing.isEmpty)
+    #expect(report.backends.appleEvents.wired == true)
+    #expect(report.backends.eventKit.calendar == .fullAccess)
+}
+
+@Test func doctorProbeReportsDeniedAccessWhenWired() {
+    let report = Doctor.probe(
+        eventStore: MockEventStoreClient(calendar: .denied, reminders: .restricted),
+        scriptRunner: MockScriptRunner(),
+        version: "0.1.0"
+    )
+    #expect(report.ok == false)
+    #expect(report.missing.contains { $0.contains("Calendar") && $0.contains("denied") })
+    #expect(
+        report.missing.contains { $0.contains("Reminders") && $0.contains("restricted") }
+    )
+}
+
+@Test func doctorFormatTextIncludesMissingBullets() {
+    let report = Doctor.probe(
+        eventStore: StubEventStoreClient(),
+        scriptRunner: StubScriptRunner()
+    )
+    let text = Doctor.formatText(report)
+    #expect(text.contains("macverbs doctor"))
+    #expect(text.contains("EventKit: stub"))
+    #expect(text.contains("missing:"))
+    #expect(text.contains("EventKit client not wired"))
+}
+
+@Test func doctorCommandJsonOnStdout() throws {
+    try withRedirectedStdio { pipes in
+        BackendClients.resetDefaults()
+        let code = MacverbsApp.run(arguments: ["--json", "doctor"])
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        let data = Data(text.utf8)
+        let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        #expect(obj?["ok"] as? Bool == false)
+        #expect(obj?["version"] as? String == Version.current)
+        let missing = obj?["missing"] as? [String]
+        #expect(missing?.isEmpty == false)
+        #expect(try pipes.readError().isEmpty)
+    }
+}
+
+@Test func doctorCommandTextOnStdout() throws {
+    try withRedirectedStdio { pipes in
+        BackendClients.resetDefaults()
+        let code = MacverbsApp.run(arguments: ["doctor"])
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        #expect(text.contains("macverbs doctor"))
+        #expect(text.contains("missing:"))
+        #expect(try pipes.readError().isEmpty)
+    }
+}
+
+@Test func doctorHelpListsCommand() {
+    let help = Macverbs.helpMessage()
+    #expect(help.contains("doctor"))
 }
 
 // MARK: - Stdio test helpers

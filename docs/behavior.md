@@ -92,8 +92,39 @@ Date/time forms: `YYYY-MM-DD HH:MM` (oracle-compatible).
 
 | Verb | Status |
 |------|--------|
-| doctor | planned |
+| doctor | **stub** (T03; full TCC report in T21) |
 | --version / --help | **done** (T01) |
+
+#### doctor (stub)
+
+Runs without EventKit/osascript and without TCC prompts. Reports backend wiring
+and authorization status from injectable seams (`EventStoreClient`,
+`ScriptRunner`). With default stubs, `ok` is false and `missing` lists what is
+not wired yet.
+
+JSON shape:
+
+```json
+{
+  "backends": {
+    "appleEvents": { "kind": "stub", "wired": false },
+    "eventKit": {
+      "calendar": "unavailable",
+      "kind": "stub",
+      "reminders": "unavailable"
+    }
+  },
+  "missing": [
+    "EventKit client not wired (Calendar, Reminders; see T06)",
+    "ScriptRunner not wired (Mail, Notes via Apple Events; see T13)"
+  ],
+  "ok": false,
+  "version": "0.1.0"
+}
+```
+
+Exit 0 when the report is produced successfully (gaps go in `missing`, not exit
+code).
 
 ## JSON field notes (fill as verbs land)
 

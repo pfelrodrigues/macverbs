@@ -13,7 +13,9 @@ struct Macverbs: ParsableCommand {
             Exit codes: 0 ok, 1 domain, 2 system, 64 usage.
             """,
         version: Version.current,
-        subcommands: []
+        subcommands: [
+            DoctorCommand.self
+        ]
     )
 
     /// Declared so `--json` appears in root help. Leading peel in `MacverbsApp`
