@@ -36,21 +36,16 @@ macverbs --version
 macverbs doctor
 ```
 
-### Homebrew (planned)
-
-Formula lives at [`Formula/macverbs.rb`](Formula/macverbs.rb). Public tap + tagged
-release are not published yet — see [`docs/RELEASE.md`](docs/RELEASE.md).
+### Homebrew
 
 ```bash
-# after the tap is published:
-# brew install pfelrodrigues/macverbs/macverbs
+brew install pfelrodrigues/macverbs/macverbs
+macverbs --version
+macverbs doctor
 ```
 
-Local formula smoke (from a checkout, no tap):
-
-```bash
-brew install --build-from-source ./Formula/macverbs.rb
-```
+Tap repo: [pfelrodrigues/homebrew-macverbs](https://github.com/pfelrodrigues/homebrew-macverbs).  
+Release process: [`docs/RELEASE.md`](docs/RELEASE.md).
 
 ## Permissions (TCC)
 
