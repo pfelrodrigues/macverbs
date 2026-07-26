@@ -158,8 +158,8 @@ Text: `created: Standup`.
 |------|------|--------|
 | accounts | | **done** (T14) |
 | unread | | **done** (T14) |
-| list | `--account` (empty = all) `--limit` (default `20`) `--mailbox inbox\|archive` (default `inbox`) | planned |
-| read | `message-id`, `--account` | planned |
+| list | `--account` (empty = all) `--limit` (default `20`) `--mailbox inbox\|archive` (default `inbox`) | **done** (T15) |
+| read | `message-id`, `--account` | **done** (T15) |
 | archive | `ids…`, `--account` (required); **Gmail → unsupported** (honest refuse) | planned |
 | delete | `ids…`, `--account` (required) | planned |
 | attachments | `message-id`, `--dest` (required), `--account` | planned |
@@ -199,6 +199,47 @@ JSON: array of `{ "account", "unread" }` with `unread` as integer. Text:
     "unread": 5
   }
 ]
+```
+
+#### mail list (T15)
+
+Recent messages via Apple Events. Empty `--account` scans all accounts.
+`--mailbox inbox` (default) or `archive`. Resolves the box by ordered name
+candidates (inbox: `INBOX`, `Caixa de Entrada`, `Inbox`, `Bandeja de entrada`;
+archive: Gmail All Mail forms, then `Archive` / `Arquivo Morto` / `Arquivo`).
+`--limit` caps messages **per account** (default 20). Negative limit → exit 1.
+
+JSON: array of `{ "account", "date", "id", "read", "sender", "subject" }`
+(`read` is the string `"read"` or `"unread"`, not a boolean). Text:
+`[read|unread] (account) subject | sender | date | id:…`, or `no messages.`
+
+```json
+[
+  {
+    "account": "Work",
+    "date": "Saturday, July 5, 2026 at 10:00:00 AM",
+    "id": "<msg1@example.com>",
+    "read": "unread",
+    "sender": "Alice <alice@example.com>",
+    "subject": "Standup notes"
+  }
+]
+```
+
+#### mail read (T15)
+
+Fetch one message by Message-ID (value from `mail list`). Optional
+`--account` narrows the search. Searches inbox **and** archive candidates
+(treated/replied mail is often already archived). Returns a multi-line body
+with From/Subject/Date lines plus content (oracle header labels kept for
+parity). Missing message → exit 1 (`message <id> not found`).
+
+JSON: `{ "body": "…" }`. Text: the body string (or `(empty)` when blank).
+
+```json
+{
+  "body": "De: Alice <alice@example.com>\nAssunto: Standup notes\nData: …\n\nHello"
+}
 ```
 
 #### Mail behavioral constraints (oracle)

@@ -1927,6 +1927,289 @@ private func utcDate(
     let mailHelp = MailCommand.helpMessage()
     #expect(mailHelp.contains("accounts"))
     #expect(mailHelp.contains("unread"))
+    #expect(mailHelp.contains("list"))
+    #expect(mailHelp.contains("read"))
+}
+
+// MARK: - Mail list + read (T15)
+
+@Test func mailScriptsListContainsInboxCandidatesAndLimit() {
+    let s = MailScripts.list(account: "Work", limit: 5, mailbox: .inbox)
+    #expect(s.contains("tell application \"Mail\""))
+    #expect(s.contains("set boxNames to"))
+    #expect(s.contains("INBOX"))
+    #expect(s.contains("Caixa de Entrada"))
+    #expect(s.contains("if n > 5 then set n to 5"))
+    #expect(s.contains(#"(name of acct) is "Work""#))
+    #expect(s.contains("message id of msg"))
+    #expect(s.contains("rdFlag to \"read\""))
+    #expect(s.contains("rdFlag to \"unread\""))
+}
+
+@Test func mailScriptsListArchiveUsesArchiveCandidates() {
+    let s = MailScripts.list(account: "", limit: 20, mailbox: .archive)
+    #expect(s.contains("[Gmail]/Todos os e-mails"))
+    #expect(s.contains("[Gmail]/All Mail"))
+    #expect(s.contains("Archive"))
+    #expect(s.contains("Arquivo Morto"))
+    // Empty account still emits the all-accounts filter form.
+    #expect(s.contains(#"("" is "" or (name of acct) is "")"#))
+}
+
+@Test func mailScriptsReadSearchesInboxAndArchive() {
+    let s = MailScripts.read(messageID: "abc@x", account: "")
+    #expect(s.contains(#""abc@x""#))
+    #expect(s.contains("__NOTFOUND__"))
+    #expect(s.contains("INBOX"))
+    #expect(s.contains("[Gmail]/Todos os e-mails"))
+    #expect(s.contains("message id is"))
+}
+
+@Test func mailScriptsReadEscapesQuotesInMessageID() {
+    let s = MailScripts.read(messageID: #"id"with"quote"#, account: "Acme")
+    #expect(s.contains(#""id\"with\"quote""#))
+    #expect(s.contains(#"(name of acct) is "Acme""#))
+}
+
+@Test func mailListParsesRecords() throws {
+    let fs = AppleScript.fieldSeparator
+    let rs = AppleScript.recordSeparator
+    let out =
+        "Work\(fs)Standup\(fs)Alice <a@x.com>\(fs)Sat\(fs)unread\(fs)<id1@x>\(rs)"
+        + "Personal\(fs)Hi\(fs)Bob\(fs)Sun\(fs)read\(fs)<id2@x>\(rs)"
+    let items = try Mail.list(runner: MockScriptRunner(stdout: out))
+    #expect(
+        items == [
+            MailMessageItem(
+                account: "Work",
+                subject: "Standup",
+                sender: "Alice <a@x.com>",
+                date: "Sat",
+                read: "unread",
+                id: "<id1@x>"
+            ),
+            MailMessageItem(
+                account: "Personal",
+                subject: "Hi",
+                sender: "Bob",
+                date: "Sun",
+                read: "read",
+                id: "<id2@x>"
+            ),
+        ]
+    )
+}
+
+@Test func mailListEmptyAndNegativeLimit() throws {
+    #expect(try Mail.list(runner: MockScriptRunner(stdout: "")).isEmpty)
+    do {
+        _ = try Mail.list(limit: -1, runner: MockScriptRunner(stdout: ""))
+        Issue.record("expected throw")
+    } catch let error as MacverbsError {
+        #expect(error == .domain("--limit must be >= 0"))
+    } catch {
+        Issue.record("unexpected error \(error)")
+    }
+}
+
+@Test func mailListPassesScriptOptionsToRunner() throws {
+    let recorder = RecordingOsascriptProcess()
+    recorder.result = OsascriptProcessResult(exitStatus: 0, stdout: "", stderr: "")
+    let runner = OSAScriptRunner(process: recorder)
+    _ = try Mail.list(account: "Acme", limit: 3, mailbox: .archive, runner: runner)
+    #expect(recorder.scripts.count == 1)
+    let s = recorder.scripts[0]
+    #expect(s.contains(#"(name of acct) is "Acme""#))
+    #expect(s.contains("if n > 3 then set n to 3"))
+    #expect(s.contains("[Gmail]/All Mail"))
+}
+
+@Test func mailReadParsesBody() throws {
+    let body = "De: a@x\nAssunto: Hi\nData: today\n\nHello"
+    let result = try Mail.read(messageID: "mid", runner: MockScriptRunner(stdout: body))
+    #expect(result == MailMessageBody(body: body))
+}
+
+@Test func mailReadNotFoundIsDomainError() {
+    do {
+        _ = try Mail.read(
+            messageID: "<missing@x>",
+            runner: MockScriptRunner(stdout: "__NOTFOUND__\n")
+        )
+        Issue.record("expected throw")
+    } catch let error as MacverbsError {
+        #expect(error == .domain("message <missing@x> not found"))
+        #expect(error.processExitCode == ExitCodes.domain)
+    } catch {
+        Issue.record("unexpected error \(error)")
+    }
+}
+
+@Test func mailFormatListText() {
+    #expect(Mail.formatList([]) == "no messages.")
+    let text = Mail.formatList([
+        MailMessageItem(
+            account: "Work",
+            subject: "S",
+            sender: "R",
+            date: "d",
+            read: "read",
+            id: "1"
+        )
+    ])
+    #expect(text == "[read] (Work) S | R | d | id:1")
+}
+
+@Test func mailFormatBodyText() {
+    #expect(Mail.formatBody(MailMessageBody(body: "")) == "(empty)")
+    #expect(Mail.formatBody(MailMessageBody(body: "hello")) == "hello")
+}
+
+@Test func mailListCommandJsonOnStdout() throws {
+    try withRedirectedStdio { pipes in
+        let fs = AppleScript.fieldSeparator
+        let rs = AppleScript.recordSeparator
+        BackendClients.scriptRunner = MockScriptRunner(
+            stdout: "Work\(fs)Subj\(fs)Sender\(fs)Date\(fs)unread\(fs)<m@x>\(rs)"
+        )
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(arguments: ["--json", "mail", "list", "--limit", "5"])
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        let data = Data(text.utf8)
+        let arr = try JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+        #expect(arr?.count == 1)
+        #expect(arr?[0]["account"] as? String == "Work")
+        #expect(arr?[0]["subject"] as? String == "Subj")
+        #expect(arr?[0]["sender"] as? String == "Sender")
+        #expect(arr?[0]["date"] as? String == "Date")
+        #expect(arr?[0]["read"] as? String == "unread")
+        #expect(arr?[0]["id"] as? String == "<m@x>")
+        // Sorted keys: account, date, id, read, sender, subject
+        if let accountRange = text.range(of: "\"account\""),
+            let dateRange = text.range(of: "\"date\""),
+            let idRange = text.range(of: "\"id\""),
+            let readRange = text.range(of: "\"read\""),
+            let senderRange = text.range(of: "\"sender\""),
+            let subjectRange = text.range(of: "\"subject\"")
+        {
+            #expect(accountRange.lowerBound < dateRange.lowerBound)
+            #expect(dateRange.lowerBound < idRange.lowerBound)
+            #expect(idRange.lowerBound < readRange.lowerBound)
+            #expect(readRange.lowerBound < senderRange.lowerBound)
+            #expect(senderRange.lowerBound < subjectRange.lowerBound)
+        } else {
+            Issue.record("expected mail list JSON keys")
+        }
+        let _errEmpty = try pipes.readError()
+        #expect(_errEmpty.isEmpty)
+    }
+}
+
+@Test func mailListCommandTextOnStdout() throws {
+    try withRedirectedStdio { pipes in
+        let fs = AppleScript.fieldSeparator
+        let rs = AppleScript.recordSeparator
+        BackendClients.scriptRunner = MockScriptRunner(
+            stdout: "Acme\(fs)S\(fs)R\(fs)d\(fs)read\(fs)1\(rs)"
+        )
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(
+            arguments: ["mail", "list", "--mailbox", "archive", "--account", "Acme"]
+        )
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        #expect(text.contains("[read] (Acme) S | R | d | id:1"))
+        let _errEmpty = try pipes.readError()
+        #expect(_errEmpty.isEmpty)
+    }
+}
+
+@Test func mailListCommandEmptyText() throws {
+    try withRedirectedStdio { pipes in
+        BackendClients.scriptRunner = MockScriptRunner(stdout: "")
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(arguments: ["mail", "list"])
+        #expect(code == ExitCodes.success)
+        let _out = try pipes.readOutput()
+        #expect(_out.contains("no messages."))
+        let _errEmpty = try pipes.readError()
+        #expect(_errEmpty.isEmpty)
+    }
+}
+
+@Test func mailReadCommandJsonOnStdout() throws {
+    try withRedirectedStdio { pipes in
+        BackendClients.scriptRunner = MockScriptRunner(
+            stdout: "De: a\nAssunto: b\n\nbody text"
+        )
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(
+            arguments: ["--json", "mail", "read", "<id@x>", "--account", "Work"]
+        )
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        let data = Data(text.utf8)
+        let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        #expect(obj?["body"] as? String == "De: a\nAssunto: b\n\nbody text")
+        let _errEmpty = try pipes.readError()
+        #expect(_errEmpty.isEmpty)
+    }
+}
+
+@Test func mailReadCommandTextOnStdout() throws {
+    try withRedirectedStdio { pipes in
+        BackendClients.scriptRunner = MockScriptRunner(stdout: "plain body")
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(arguments: ["mail", "read", "mid-1"])
+        #expect(code == ExitCodes.success)
+        let _out = try pipes.readOutput()
+        #expect(_out.contains("plain body"))
+        let _errEmpty = try pipes.readError()
+        #expect(_errEmpty.isEmpty)
+    }
+}
+
+@Test func mailReadNotFoundExit1() throws {
+    try withRedirectedStdio { pipes in
+        BackendClients.scriptRunner = MockScriptRunner(stdout: "__NOTFOUND__")
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(arguments: ["mail", "read", "ghost"])
+        #expect(code == ExitCodes.domain)
+        let err = try pipes.readError()
+        #expect(err.contains("error: message ghost not found"))
+        let _outEmpty = try pipes.readOutput()
+        #expect(_outEmpty.isEmpty)
+    }
+}
+
+@Test func mailListNegativeLimitExit1() throws {
+    try withRedirectedStdio { pipes in
+        BackendClients.scriptRunner = MockScriptRunner(stdout: "")
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(arguments: ["mail", "list", "--limit=-1"])
+        #expect(code == ExitCodes.domain)
+        let err = try pipes.readError()
+        #expect(err.contains("error: --limit must be >= 0"))
+        let _outEmpty = try pipes.readOutput()
+        #expect(_outEmpty.isEmpty)
+    }
+}
+
+@Test func mailListInvalidMailboxUsageExit64() throws {
+    try withRedirectedStdio { pipes in
+        let code = MacverbsApp.run(arguments: ["mail", "list", "--mailbox", "trash"])
+        #expect(code == ExitCodes.usage)
+        let _outEmpty = try pipes.readOutput()
+        #expect(_outEmpty.isEmpty)
+    }
 }
 
 // MARK: - Reminders lists + list (T09)
