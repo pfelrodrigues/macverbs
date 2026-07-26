@@ -89,6 +89,28 @@ enum EventStoreAccess {
     }
 }
 
+// MARK: - Event data transfer (Calendar list)
+
+/// Calendar metadata from EventKit (event calendars only).
+struct EventKitCalendarInfo: Equatable, Sendable {
+    /// EventKit `calendarIdentifier` (stable UID used in `calendars.json`).
+    var uid: String
+    /// Calendar title as shown in Calendar.app.
+    var title: String
+}
+
+/// One event occurrence (recurring series already expanded by EventKit).
+struct EventKitEventInfo: Equatable, Sendable {
+    var title: String
+    var startDate: Date
+    var endDate: Date
+    var isAllDay: Bool
+    /// Owning calendar UID (`calendarIdentifier`).
+    var calendarUID: String
+    /// Owning calendar title (fallback label when config has no alias).
+    var calendarTitle: String
+}
+
 /// Injectable EventKit store seam.
 ///
 /// Production: `EKEventStoreClient` wraps `EKEventStore`. Unit tests inject mocks
@@ -103,6 +125,26 @@ protocol EventStoreClient: Sendable {
     /// Denied / restricted are returned as statuses (not thrown); only system
     /// failures throw.
     func requestAccess(for entity: EventEntityType) throws -> EventAuthorizationStatus
+
+    /// Event calendars known to the store (empty when unwired).
+    ///
+    /// Callers must `ensureAccess(for: .event)` first in production paths.
+    func eventCalendars() throws -> [EventKitCalendarInfo]
+
+    /// Events in `[start, end)` with recurring instances expanded by EventKit.
+    ///
+    /// - Parameters:
+    ///   - start: Inclusive range start.
+    ///   - end: Exclusive range end (EventKit predicate convention).
+    func events(from start: Date, to end: Date) throws -> [EventKitEventInfo]
+
+    /// Reminder lists with incomplete counts (caller must `ensureAccess` first).
+    func reminderLists() throws -> [ReminderListInfo]
+
+    /// Incomplete reminders. `listName` nil → all lists; else exact title match.
+    ///
+    /// - Throws: `MacverbsError.domain` when a named list is missing.
+    func incompleteReminders(listName: String?) throws -> [ReminderItem]
 }
 
 extension EventStoreClient {
@@ -136,6 +178,18 @@ protocol EventKitBacking: Sendable {
 
     /// Request full access (may prompt). Returns whether the user granted access.
     func requestFullAccess(for entity: EventEntityType) throws -> Bool
+
+    /// Event calendars from the store.
+    func eventCalendars() throws -> [EventKitCalendarInfo]
+
+    /// Events in `[start, end)` with recurrence expansion.
+    func events(from start: Date, to end: Date) throws -> [EventKitEventInfo]
+
+    /// Reminder lists with incomplete counts (no auth prompt).
+    func reminderLists() throws -> [ReminderListInfo]
+
+    /// Incomplete reminders. `listName` nil → all; else exact title match.
+    func incompleteReminders(listName: String?) throws -> [ReminderItem]
 }
 
 // MARK: - Live EKEventStore
@@ -181,6 +235,45 @@ final class LiveEventKitBacking: EventKitBacking, @unchecked Sendable {
             )
         }
         return box.granted
+    }
+
+    func eventCalendars() throws -> [EventKitCalendarInfo] {
+        store.calendars(for: .event)
+            .map { cal in
+                EventKitCalendarInfo(
+                    uid: cal.calendarIdentifier,
+                    title: cal.title
+                )
+            }
+    }
+
+    func events(from start: Date, to end: Date) throws -> [EventKitEventInfo] {
+        let calendars = store.calendars(for: .event)
+        let predicate = store.predicateForEvents(
+            withStart: start,
+            end: end,
+            calendars: calendars
+        )
+        // EventKit expands recurring events into individual occurrences for the range.
+        return store.events(matching: predicate)
+            .map { event in
+                EventKitEventInfo(
+                    title: event.title ?? "",
+                    startDate: event.startDate,
+                    endDate: event.endDate,
+                    isAllDay: event.isAllDay,
+                    calendarUID: event.calendar.calendarIdentifier,
+                    calendarTitle: event.calendar.title
+                )
+            }
+    }
+
+    func reminderLists() throws -> [ReminderListInfo] {
+        try LiveRemindersQuery.lists(store: store)
+    }
+
+    func incompleteReminders(listName: String?) throws -> [ReminderItem] {
+        try LiveRemindersQuery.incomplete(store: store, listName: listName)
     }
 
     /// Mutable result carrier for EventKit completion handlers (sync bridge).
@@ -252,6 +345,22 @@ struct EKEventStoreClient: EventStoreClient {
         _ = try backing.requestFullAccess(for: entity)
         return authorizationStatus(for: entity)
     }
+
+    func eventCalendars() throws -> [EventKitCalendarInfo] {
+        try backing.eventCalendars()
+    }
+
+    func events(from start: Date, to end: Date) throws -> [EventKitEventInfo] {
+        try backing.events(from: start, to: end)
+    }
+
+    func reminderLists() throws -> [ReminderListInfo] {
+        try backing.reminderLists()
+    }
+
+    func incompleteReminders(listName: String?) throws -> [ReminderItem] {
+        try backing.incompleteReminders(listName: listName)
+    }
 }
 
 // MARK: - Stub (no EventKit / no TCC)
@@ -266,6 +375,30 @@ struct StubEventStoreClient: EventStoreClient {
     }
 
     func requestAccess(for entity: EventEntityType) throws -> EventAuthorizationStatus {
+        throw MacverbsError.system(
+            "EventKit client not wired (Calendar, Reminders; see T06)"
+        )
+    }
+
+    func eventCalendars() throws -> [EventKitCalendarInfo] {
+        throw MacverbsError.system(
+            "EventKit client not wired (Calendar, Reminders; see T06)"
+        )
+    }
+
+    func events(from start: Date, to end: Date) throws -> [EventKitEventInfo] {
+        throw MacverbsError.system(
+            "EventKit client not wired (Calendar, Reminders; see T06)"
+        )
+    }
+
+    func reminderLists() throws -> [ReminderListInfo] {
+        throw MacverbsError.system(
+            "EventKit client not wired (Calendar, Reminders; see T06)"
+        )
+    }
+
+    func incompleteReminders(listName: String?) throws -> [ReminderItem] {
         throw MacverbsError.system(
             "EventKit client not wired (Calendar, Reminders; see T06)"
         )

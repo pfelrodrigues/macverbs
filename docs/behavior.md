@@ -40,14 +40,48 @@ Help (`-h` / `--help`) and `--version` write to stdout and exit 0. Usage failure
 
 | Verb | Args (summary) | Status |
 |------|----------------|--------|
-| lists | | planned |
-| list | `--list` (optional; empty = all / first) | planned |
+| lists | | **done** (T09) |
+| list | `--list` (optional; empty = all lists) | **done** (T09) |
 | add | `title`, `--list` `--due` `--notes` `--priority high\|medium\|low` | planned |
 | done | `title`, `--list` | planned |
 | move | `title`, `--from` (required) `--to` (required) | planned |
 | edit | `title`, `--list` `--due` `--priority high\|medium\|low\|none` `--notes` | planned |
 | mklist | `name` (idempotent: ensure list exists) | planned |
 | delete | `title`, `--list` (delete without completing) | planned |
+
+#### reminders lists / list (T09)
+
+EventKit (no AppleScript). `reminders lists` returns each list with its
+incomplete count. `reminders list` returns incomplete items; `--list` filters
+by exact list title (empty = all lists). Priority mapping matches the oracle:
+0 none (empty string), 1–4 `high`, 5 `medium`, 6–9 `low`. Due dates use
+`YYYY-MM-DD` or `YYYY-MM-DD HH:MM` (stable; not locale AppleScript text).
+
+JSON lists: array of `{ "name", "pending" }`. Text: `- Name (N pending)`.
+
+JSON items: array of `{ "due", "list", "notes", "priority", "title" }` (sorted
+keys). Text: `- title | list: … | due: … | priority: … | notes: …`.
+
+```json
+[
+  {
+    "name": "Work",
+    "pending": 2
+  }
+]
+```
+
+```json
+[
+  {
+    "due": "2026-07-06 14:30",
+    "list": "Work",
+    "notes": "bring laptop",
+    "priority": "high",
+    "title": "Standup prep"
+  }
+]
+```
 
 ### calendar
 

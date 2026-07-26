@@ -178,6 +178,16 @@ struct MockEventStoreClient: EventStoreClient {
     var afterRequestReminders: EventAuthorizationStatus = .denied
     /// Optional system failure from `requestAccess`.
     var requestError: Error?
+    /// Optional failure from data query methods.
+    var dataError: Error?
+    /// Canned event calendars (default empty).
+    var calendars: [EventKitCalendarInfo] = []
+    /// Canned events (default empty).
+    var eventInfos: [EventKitEventInfo] = []
+    /// Canned reminder lists (default empty).
+    var reminderListInfos: [ReminderListInfo] = []
+    /// Canned incomplete reminders (default empty).
+    var reminderItems: [ReminderItem] = []
 
     func authorizationStatus(for entity: EventEntityType) -> EventAuthorizationStatus {
         switch entity {
@@ -203,6 +213,41 @@ struct MockEventStoreClient: EventStoreClient {
             return afterRequestReminders
         }
     }
+
+    func eventCalendars() throws -> [EventKitCalendarInfo] {
+        if let dataError {
+            throw dataError
+        }
+        return calendars
+    }
+
+    func events(from start: Date, to end: Date) throws -> [EventKitEventInfo] {
+        if let dataError {
+            throw dataError
+        }
+        return eventInfos.filter { $0.startDate >= start && $0.startDate < end }
+    }
+
+    func reminderLists() throws -> [ReminderListInfo] {
+        if let dataError {
+            throw dataError
+        }
+        return reminderListInfos
+    }
+
+    func incompleteReminders(listName: String?) throws -> [ReminderItem] {
+        if let dataError {
+            throw dataError
+        }
+        guard let listName, !listName.isEmpty else {
+            return reminderItems
+        }
+        let known = Set(reminderListInfos.map(\.name)).union(Set(reminderItems.map(\.list)))
+        if !known.contains(listName) {
+            throw MacverbsError.domain("list \(listName) not found")
+        }
+        return reminderItems.filter { $0.list == listName }
+    }
 }
 
 /// Fake EventKit surface for `EKEventStoreClient` unit tests (no live store).
@@ -210,17 +255,29 @@ final class FakeEventKitBacking: EventKitBacking, @unchecked Sendable {
     var statuses: [EventEntityType: EventAuthorizationStatus]
     var grantOnRequest: Bool
     var requestError: Error?
+    var calendars: [EventKitCalendarInfo]
+    var eventInfos: [EventKitEventInfo]
+    var reminderListInfos: [ReminderListInfo]
+    var reminderItems: [ReminderItem]
     private(set) var requestCalls: [EventEntityType] = []
 
     init(
         calendar: EventAuthorizationStatus = .notDetermined,
         reminders: EventAuthorizationStatus = .notDetermined,
         grantOnRequest: Bool = false,
-        requestError: Error? = nil
+        requestError: Error? = nil,
+        calendars: [EventKitCalendarInfo] = [],
+        eventInfos: [EventKitEventInfo] = [],
+        reminderListInfos: [ReminderListInfo] = [],
+        reminderItems: [ReminderItem] = []
     ) {
         self.statuses = [.event: calendar, .reminder: reminders]
         self.grantOnRequest = grantOnRequest
         self.requestError = requestError
+        self.calendars = calendars
+        self.eventInfos = eventInfos
+        self.reminderListInfos = reminderListInfos
+        self.reminderItems = reminderItems
     }
 
     func authorizationStatus(for entity: EventEntityType) -> EventAuthorizationStatus {
@@ -238,6 +295,29 @@ final class FakeEventKitBacking: EventKitBacking, @unchecked Sendable {
             statuses[entity] = .denied
         }
         return grantOnRequest
+    }
+
+    func eventCalendars() throws -> [EventKitCalendarInfo] {
+        calendars
+    }
+
+    func events(from start: Date, to end: Date) throws -> [EventKitEventInfo] {
+        eventInfos.filter { $0.startDate >= start && $0.startDate < end }
+    }
+
+    func reminderLists() throws -> [ReminderListInfo] {
+        reminderListInfos
+    }
+
+    func incompleteReminders(listName: String?) throws -> [ReminderItem] {
+        guard let listName, !listName.isEmpty else {
+            return reminderItems
+        }
+        let known = Set(reminderListInfos.map(\.name)).union(Set(reminderItems.map(\.list)))
+        if !known.contains(listName) {
+            throw MacverbsError.domain("list \(listName) not found")
+        }
+        return reminderItems.filter { $0.list == listName }
     }
 }
 
@@ -1077,6 +1157,252 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
     let mailHelp = MailCommand.helpMessage()
     #expect(mailHelp.contains("accounts"))
     #expect(mailHelp.contains("unread"))
+}
+
+// MARK: - Reminders lists + list (T09)
+
+@Test func reminderPriorityNameMapping() {
+    #expect(ReminderFields.priorityName(0) == "")
+    #expect(ReminderFields.priorityName(1) == "high")
+    #expect(ReminderFields.priorityName(4) == "high")
+    #expect(ReminderFields.priorityName(5) == "medium")
+    #expect(ReminderFields.priorityName(6) == "low")
+    #expect(ReminderFields.priorityName(9) == "low")
+}
+
+@Test func reminderDueStringFormats() {
+    #expect(ReminderFields.dueString(from: nil) == "")
+    var dateOnly = DateComponents()
+    dateOnly.year = 2026
+    dateOnly.month = 7
+    dateOnly.day = 6
+    #expect(ReminderFields.dueString(from: dateOnly) == "2026-07-06")
+    var withTime = dateOnly
+    withTime.hour = 14
+    withTime.minute = 30
+    #expect(ReminderFields.dueString(from: withTime) == "2026-07-06 14:30")
+}
+
+@Test func remindersFormatListsAndItems() {
+    #expect(RemindersFormat.lists([]) == "no lists.")
+    #expect(
+        RemindersFormat.lists([ReminderListInfo(name: "Work", pending: 2)])
+            == "- Work (2 pending)"
+    )
+    #expect(RemindersFormat.items([]) == "no pending reminders.")
+    let line = RemindersFormat.items([
+        ReminderItem(
+            title: "Buy milk",
+            due: "2026-07-06",
+            priority: "high",
+            list: "Personal",
+            notes: "2%"
+        )
+    ])
+    #expect(line.contains("Buy milk"))
+    #expect(line.contains("list: Personal"))
+    #expect(line.contains("due: 2026-07-06"))
+    #expect(line.contains("priority: high"))
+    #expect(line.contains("notes: 2%"))
+}
+
+@Test func mockReminderListsAndFilter() throws {
+    var mock = MockEventStoreClient(calendar: .fullAccess, reminders: .fullAccess)
+    mock.reminderListInfos = [
+        ReminderListInfo(name: "Work", pending: 1),
+        ReminderListInfo(name: "Personal", pending: 1),
+    ]
+    mock.reminderItems = [
+        ReminderItem(title: "A", due: "", priority: "", list: "Work", notes: ""),
+        ReminderItem(
+            title: "B",
+            due: "2026-07-06",
+            priority: "medium",
+            list: "Personal",
+            notes: "x"
+        ),
+    ]
+    #expect(try mock.reminderLists().count == 2)
+    #expect(try mock.incompleteReminders(listName: nil).count == 2)
+    let work = try mock.incompleteReminders(listName: "Work")
+    #expect(work.count == 1 && work[0].title == "A")
+    do {
+        _ = try mock.incompleteReminders(listName: "Missing")
+        Issue.record("expected throw")
+    } catch let error as MacverbsError {
+        #expect(error == .domain("list Missing not found"))
+    } catch {
+        Issue.record("unexpected \(error)")
+    }
+}
+
+@Test func stubReminderQueriesThrowSystem() {
+    let stub = StubEventStoreClient()
+    #expect(throws: MacverbsError.self) {
+        try stub.reminderLists()
+    }
+    #expect(throws: MacverbsError.self) {
+        try stub.incompleteReminders(listName: nil)
+    }
+}
+
+@Test func ekClientDelegatesRemindersToFakeBacking() throws {
+    let fake = FakeEventKitBacking(
+        calendar: .fullAccess,
+        reminders: .fullAccess,
+        reminderListInfos: [ReminderListInfo(name: "Inbox", pending: 1)],
+        reminderItems: [
+            ReminderItem(
+                title: "Task",
+                due: "2026-07-06 09:00",
+                priority: "low",
+                list: "Inbox",
+                notes: ""
+            )
+        ]
+    )
+    let client = EKEventStoreClient(backing: fake)
+    #expect(try client.reminderLists() == [ReminderListInfo(name: "Inbox", pending: 1)])
+    let items = try client.incompleteReminders(listName: "Inbox")
+    #expect(items.count == 1)
+    #expect(items[0].title == "Task")
+    #expect(items[0].priority == "low")
+}
+
+@Test func remindersListsCommandJsonOnStdout() throws {
+    try withRedirectedStdio { pipes in
+        var mock = MockEventStoreClient(calendar: .fullAccess, reminders: .fullAccess)
+        mock.reminderListInfos = [
+            ReminderListInfo(name: "Work", pending: 3),
+            ReminderListInfo(name: "Personal", pending: 0),
+        ]
+        BackendClients.eventStore = mock
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(arguments: ["--json", "reminders", "lists"])
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        let data = Data(text.utf8)
+        let arr = try JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+        #expect(arr?.count == 2)
+        #expect(arr?[0]["name"] as? String == "Work")
+        #expect(arr?[0]["pending"] as? Int == 3)
+        #expect(arr?[1]["name"] as? String == "Personal")
+        #expect(arr?[1]["pending"] as? Int == 0)
+        if let nameRange = text.range(of: "\"name\""),
+            let pendingRange = text.range(of: "\"pending\"")
+        {
+            #expect(nameRange.lowerBound < pendingRange.lowerBound)
+        } else {
+            Issue.record("expected name/pending keys")
+        }
+        #expect(try pipes.readError().isEmpty)
+    }
+}
+
+@Test func remindersListCommandJsonWithListFilter() throws {
+    try withRedirectedStdio { pipes in
+        var mock = MockEventStoreClient(calendar: .fullAccess, reminders: .fullAccess)
+        mock.reminderListInfos = [ReminderListInfo(name: "Work", pending: 1)]
+        mock.reminderItems = [
+            ReminderItem(
+                title: "Ship",
+                due: "2026-07-06 14:30",
+                priority: "high",
+                list: "Work",
+                notes: "tag:release"
+            ),
+            ReminderItem(
+                title: "Other",
+                due: "",
+                priority: "",
+                list: "Personal",
+                notes: ""
+            ),
+        ]
+        BackendClients.eventStore = mock
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(
+            arguments: ["--json", "reminders", "list", "--list", "Work"]
+        )
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        let data = Data(text.utf8)
+        let arr = try JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+        #expect(arr?.count == 1)
+        #expect(arr?[0]["title"] as? String == "Ship")
+        #expect(arr?[0]["due"] as? String == "2026-07-06 14:30")
+        #expect(arr?[0]["priority"] as? String == "high")
+        #expect(arr?[0]["list"] as? String == "Work")
+        #expect(arr?[0]["notes"] as? String == "tag:release")
+        #expect(try pipes.readError().isEmpty)
+    }
+}
+
+@Test func remindersListCommandAllListsText() throws {
+    try withRedirectedStdio { pipes in
+        var mock = MockEventStoreClient(calendar: .fullAccess, reminders: .fullAccess)
+        mock.reminderItems = [
+            ReminderItem(
+                title: "A",
+                due: "",
+                priority: "",
+                list: "Work",
+                notes: ""
+            )
+        ]
+        BackendClients.eventStore = mock
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(arguments: ["reminders", "list"])
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        #expect(text.contains("- A"))
+        #expect(text.contains("list: Work"))
+        #expect(try pipes.readError().isEmpty)
+    }
+}
+
+@Test func remindersListsCommandDeniedExit1() throws {
+    try withRedirectedStdio { pipes in
+        BackendClients.eventStore = MockEventStoreClient(
+            calendar: .fullAccess,
+            reminders: .denied
+        )
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(arguments: ["reminders", "lists"])
+        #expect(code == ExitCodes.domain)
+        let err = try pipes.readError()
+        #expect(err.contains("error: Reminders access denied"))
+        #expect(try pipes.readOutput().isEmpty)
+    }
+}
+
+@Test func remindersListCommandMissingListExit1() throws {
+    try withRedirectedStdio { pipes in
+        var mock = MockEventStoreClient(calendar: .fullAccess, reminders: .fullAccess)
+        mock.reminderListInfos = [ReminderListInfo(name: "Work", pending: 0)]
+        BackendClients.eventStore = mock
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(
+            arguments: ["reminders", "list", "--list", "Acme"]
+        )
+        #expect(code == ExitCodes.domain)
+        let err = try pipes.readError()
+        #expect(err.contains("error: list Acme not found"))
+        #expect(try pipes.readOutput().isEmpty)
+    }
+}
+
+@Test func remindersHelpListsCommands() {
+    let help = Macverbs.helpMessage()
+    #expect(help.contains("reminders"))
+    let remHelp = RemindersCommand.helpMessage()
+    #expect(remHelp.contains("lists"))
+    #expect(remHelp.contains("list"))
 }
 
 // MARK: - Stdio / global backend test helpers
