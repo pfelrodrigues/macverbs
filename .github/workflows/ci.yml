@@ -7,15 +7,24 @@ on:
     branches: [main]
 
 jobs:
-  build-test:
-    name: swift build + test
+  check:
+    name: format + build + test
     runs-on: macos-15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Swift version
-        run: swift --version
+        run: |
+          swift --version
+          swift format --version
+
+      - name: Format / lint (swift format)
+        run: |
+          swift format lint \
+            --configuration .swift-format \
+            --recursive --parallel --strict \
+            Sources Tests Package.swift
 
       - name: Resolve packages
         run: swift package resolve

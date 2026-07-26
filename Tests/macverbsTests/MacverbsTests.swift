@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import macverbs
 
 @Test func versionStringIsSemver() {
@@ -103,7 +104,7 @@ private struct SamplePayload: Codable, Equatable {
     // Key order in encoded UTF-8 should be alphabetical (count before name).
     let text = String(data: data, encoding: .utf8) ?? ""
     if let countRange = text.range(of: "\"count\""),
-       let nameRange = text.range(of: "\"name\"")
+        let nameRange = text.range(of: "\"name\"")
     {
         #expect(countRange.lowerBound < nameRange.lowerBound)
     } else {

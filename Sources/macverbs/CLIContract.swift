@@ -28,7 +28,7 @@ enum MacverbsError: Error, CustomStringConvertible, Equatable {
     var message: String {
         switch self {
         case .domain(let message), .system(let message):
-            return message
+            message
         }
     }
 
@@ -37,9 +37,9 @@ enum MacverbsError: Error, CustomStringConvertible, Equatable {
     var processExitCode: Int32 {
         switch self {
         case .domain:
-            return ExitCodes.domain
+            ExitCodes.domain
         case .system:
-            return ExitCodes.system
+            ExitCodes.system
         }
     }
 }
@@ -92,7 +92,7 @@ enum CLIOutput {
     }
 
     /// Write one JSON value to stdout (pretty-printed, stable key order).
-    static func writeJSON<T: Encodable>(_ value: T) throws {
+    static func writeJSON(_ value: some Encodable) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         let data = try encoder.encode(value)

@@ -1,14 +1,12 @@
 # macverbs — project isolation via mise
-# Swift: Apple CLT/Xcode on PATH (`swift --version`).
+# Swift compiler + `swift format`: Apple CLT/Xcode on PATH.
 # Human/agent entrypoints: `mise run <task>`.
 
 min_version = "2025.8.0"
 
 [env]
 MACVERBS_ROOT = "{{config_root}}"
-# Calendar aliases etc. (outside repo). Override in shell or mise.local.toml.
 MACVERBS_CONFIG_DIR = "~/.config/macverbs"
-# Behavior oracle while porting (Python CLI).
 MACVERBS_APPLE_SPEC = "~/nix/clis/apple"
 
 [tasks.resolve]
@@ -23,20 +21,32 @@ run = "swift build"
 description = "Run unit tests"
 run = "bash scripts/swift_test.sh"
 
+[tasks.format]
+description = "Format Swift sources in place (swift format)"
+run = "swift format --configuration .swift-format --recursive --in-place --parallel Sources Tests Package.swift"
+
+[tasks.format-check]
+description = "Check formatting without writing"
+run = "swift format lint --configuration .swift-format --recursive --parallel --strict Sources Tests Package.swift"
+
+[tasks.lint]
+description = "Lint style rules (same engine as format: swift format lint)"
+run = "swift format lint --configuration .swift-format --recursive --parallel --strict Sources Tests Package.swift"
+
 [tasks.check]
-description = "Build + test (agent verification gate)"
-depends = ["build", "test"]
+description = "Format-check/lint + build + test (agent / CI gate)"
+depends = ["format-check", "build", "test"]
 run = "echo check-ok"
 
 [tasks.run]
 description = "Run macverbs (args after --)"
-# Wrapper drops empty default args from mise templates (see scripts/macverbs_run.sh).
-# Do not use `swift run macverbs -- …` — the bare `--` is forwarded into argv.
 run = "bash scripts/macverbs_run.sh {{arg(name='cli_args', var=true, default='')}}"
+
 [tasks.version]
-description = "Print swift + git identity"
+description = "Print toolchain identity"
 run = """
 swift --version
+swift format --version
 git rev-parse --short HEAD 2>/dev/null || true
 """
 
@@ -47,3 +57,12 @@ run = "python3 scripts/tasks_status.py"
 [tasks.next]
 description = "Print first pending non-manual task id"
 run = "python3 scripts/tasks_status.py --next"
+
+[tasks.hooks-install]
+description = "Point this repo at .githooks (core.hooksPath)"
+run = "bash scripts/install-git-hooks.sh"
+
+[tasks.setup]
+description = "Install git hooks (swift format is on PATH via Apple toolchain)"
+depends = ["hooks-install"]
+run = "echo setup-ok"

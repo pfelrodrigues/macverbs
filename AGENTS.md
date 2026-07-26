@@ -32,17 +32,27 @@ Project is isolated with **mise**. From repo root:
 
 ```bash
 mise trust          # once, if prompted
+mise run setup      # git hooks → .githooks/
 mise run tasks-list
 mise run next
+mise run format     # Apple `swift format` (write)
+mise run format-check
+mise run lint       # same engine, lint --strict
 mise run build
 mise run test
-mise run check      # build + test — gate before claiming a task done
+mise run check      # format-check + build + test (done gate)
 mise run run -- --help
 ```
 
-- Prefer `mise run …` over bare `swift …` in agent instructions so env is consistent.
-- Swift comes from **Apple CLT/Xcode** on PATH (not a second swift.org toolchain unless you opt in).
+| Tool | Role | Config |
+|------|------|--------|
+| **`swift format`** | format + lint (official Apple toolchain) | `.swift-format` |
+| **git hooks** | pre-commit format staged + lint strict | `.githooks/` via `mise run hooks-install` |
+
+- Prefer `mise run …` over bare `swift …` so env is consistent.
+- Compiler and `swift format` come from **Apple CLT/Xcode** on PATH (no third-party SwiftFormat/SwiftLint required).
 - Config dir: `MACVERBS_CONFIG_DIR` (default `~/.config/macverbs`). Never commit personal calendar UIDs or account names (Vert, PYO, …).
+- Before claiming a task done: **`mise run check` must pass** (includes format/lint).
 
 ## Workflow loop
 

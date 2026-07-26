@@ -27,11 +27,18 @@ One binary, two backends. Not EventKit-only (Mail and Notes have no public Event
 ```bash
 cd ~/work/Pessoal/macverbs   # or your clone
 mise trust                   # once
+mise run setup               # install git pre-commit hooks
 mise run tasks-list          # roadmap status
 mise run next                # next automated task id
-mise run build && mise run test
-mise run check               # agent gate
+mise run format              # Apple `swift format` (write)
+mise run format-check        # lint mode --strict
+mise run check               # format-check + build + test
 ```
+
+| Tool | Via |
+|------|-----|
+| Format + lint | Apple **`swift format`** (`.swift-format`) |
+| Hooks | `.githooks/pre-commit` → format staged + lint |
 
 Agent instructions: **[AGENTS.md](AGENTS.md)**. Task loop: `docs/ROADMAP.md` + workflow `implement-task`.
 
