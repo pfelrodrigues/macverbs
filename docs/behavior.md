@@ -87,10 +87,40 @@ keys). Text: `- title | list: … | due: … | priority: … | notes: …`.
 
 | Verb | Args | Status |
 |------|------|--------|
-| list | `--days` (default `7`) | planned |
+| list | `--days` (default `7`) | **done** (T07) |
 | add | `title`, `--start` (required) `--end` (required) `--calendar` | planned |
 
 Date/time forms: `YYYY-MM-DD HH:MM` (oracle-compatible).
+
+#### calendar list (T07)
+
+EventKit (no icalBuddy). Range: start of today through the end of day
+`today + --days` (oracle `eventsToday+N`). Recurring series are expanded into
+individual occurrences by EventKit. Calendar label: UID → `calendars.json`
+alias when present, else EventKit calendar title.
+
+JSON: array of objects (pretty-printed, sorted keys):
+
+```json
+[
+  {
+    "calendar": "Work",
+    "title": "Standup",
+    "when": "2026-07-26 at 10:00 - 10:30"
+  }
+]
+```
+
+- `when` timed same-day: `YYYY-MM-DD at HH:MM - HH:MM`
+- `when` timed multi-day: `YYYY-MM-DD at HH:MM - YYYY-MM-DD at HH:MM`
+- `when` all-day single: `YYYY-MM-DD`
+- `when` all-day multi: `YYYY-MM-DD - YYYY-MM-DD`
+
+Text: one line per event `- title | when | calendar`, or `no events.` when empty.
+
+Exit 1 when Calendar access is denied / restricted / write-only / not granted
+(after a request). Exit 2 on EventKit system failure.
+
 
 ### notes
 
@@ -198,13 +228,16 @@ System Settings hints (e.g. Calendar access not determined / denied).
 Exit 0 when the report is produced successfully (gaps go in `missing`, not exit
 code).
 
-#### EventStoreClient (T06)
+#### EventStoreClient (T06 / T07)
 
 - Protocol `EventStoreClient`: `authorizationStatus(for:)` (no prompt) and
   `requestAccess(for:)` (may prompt once when not determined).
 - `ensureAccess(for:)` (protocol extension): request if needed, then throw
   `MacverbsError.domain` with a clear System Settings path when access is
   denied, restricted, write-only, or still not granted.
+- Calendar data (T07): `eventCalendars()` and `events(from:to:)` (half-open
+  range; recurring instances expanded by EventKit). DTOs:
+  `EventKitCalendarInfo`, `EventKitEventInfo`.
 - Production: `EKEventStoreClient` (`kind: eventkit`) wraps `EKEventStore` via
   injectable `EventKitBacking` (live store or test double).
 - Unit tests use `MockEventStoreClient` / fake backing; never require live TCC.
