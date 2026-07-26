@@ -1,3 +1,4 @@
+import ApplicationServices
 import Foundation
 
 // MARK: - Apple Events seam (Mail + Notes)
@@ -15,6 +16,119 @@ protocol ScriptRunner: Sendable {
     ///   - timeout: Maximum wall time for the run.
     /// - Throws: `MacverbsError` (or other `Error`) on failure.
     func run(script: String, timeout: TimeInterval) throws -> String
+}
+
+// MARK: - Automation TCC (Mail / Notes)
+
+/// Targets controlled via Apple Events Automation privacy.
+enum AutomationTarget: String, Codable, Sendable, CaseIterable {
+    case mail
+    case notes
+
+    /// Human label for doctor and System Settings messages.
+    var displayName: String {
+        switch self {
+        case .mail:
+            "Mail"
+        case .notes:
+            "Notes"
+        }
+    }
+
+    /// Bundle identifier for `AEDeterminePermissionToAutomateTarget`.
+    var bundleIdentifier: String {
+        switch self {
+        case .mail:
+            "com.apple.mail"
+        case .notes:
+            "com.apple.Notes"
+        }
+    }
+}
+
+/// Authorization status for sending Apple Events to Mail / Notes.
+///
+/// Read without prompting (`askUserIfNeeded: false`). Doctor and tests use this
+/// seam so unit checks never require live Automation TCC.
+enum AutomationAuthorizationStatus: String, Codable, Sendable {
+    /// Sender may automate the target.
+    case authorized
+    /// User denied Automation for this target.
+    case denied
+    /// Not yet decided; first real send would prompt (or already would require consent).
+    case notDetermined
+    /// Target app is not running; AE permission cannot be resolved without launch.
+    case notRunning
+    /// Checker not wired / stub path.
+    case unavailable
+}
+
+/// Injectable Automation permission probe (no prompts).
+protocol AutomationPermissionClient: Sendable {
+    /// Read Automation status for a target **without** prompting the user.
+    func authorizationStatus(for target: AutomationTarget) -> AutomationAuthorizationStatus
+}
+
+/// Production probe via `AEDeterminePermissionToAutomateTarget` (`askUserIfNeeded: false`).
+///
+/// The Apple Events API requires the target process to be running. When Mail or
+/// Notes is not running, status is `.notRunning` (not a proven denial).
+struct AEAutomationPermissionClient: AutomationPermissionClient {
+    /// Identity string for doctor / diagnostics.
+    static let kind = "ae"
+
+    func authorizationStatus(for target: AutomationTarget) -> AutomationAuthorizationStatus {
+        let descriptor = NSAppleEventDescriptor(bundleIdentifier: target.bundleIdentifier)
+        let status = AEDeterminePermissionToAutomateTarget(
+            descriptor.aeDesc,
+            AEEventClass(typeWildCard),
+            AEEventID(typeWildCard),
+            false
+        )
+        switch status {
+        case noErr:
+            return .authorized
+        case OSStatus(errAEEventNotPermitted):
+            return .denied
+        case OSStatus(errAEEventWouldRequireUserConsent):
+            return .notDetermined
+        case OSStatus(procNotFound):
+            return .notRunning
+        default:
+            // Unexpected OSStatus: treat as not determined so doctor stays non-fatal.
+            return .notDetermined
+        }
+    }
+}
+
+/// Test double: fixed statuses; never touches AE / TCC.
+struct MockAutomationPermissionClient: AutomationPermissionClient {
+    var mail: AutomationAuthorizationStatus
+    var notes: AutomationAuthorizationStatus
+
+    init(
+        mail: AutomationAuthorizationStatus = .authorized,
+        notes: AutomationAuthorizationStatus = .authorized
+    ) {
+        self.mail = mail
+        self.notes = notes
+    }
+
+    func authorizationStatus(for target: AutomationTarget) -> AutomationAuthorizationStatus {
+        switch target {
+        case .mail:
+            mail
+        case .notes:
+            notes
+        }
+    }
+}
+
+/// Pre-wiring / stub: always unavailable.
+struct StubAutomationPermissionClient: AutomationPermissionClient {
+    func authorizationStatus(for target: AutomationTarget) -> AutomationAuthorizationStatus {
+        .unavailable
+    }
 }
 
 // MARK: - Delimiters + escape + structured parse (oracle: apple.osa)

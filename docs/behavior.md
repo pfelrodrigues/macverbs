@@ -491,25 +491,44 @@ JSON compose: `{ "subject", "to", "cc" }`. Text:
 
 | Verb | Status |
 |------|--------|
-| doctor | **stub** (T03; full TCC report in T21) |
+| doctor | **done** (T21; full TCC report) |
 | --version / --help | **done** (T01) |
 
-#### doctor (stub)
+#### doctor (T21)
 
-Runs without EventKit permission prompts. Reports backend wiring and
-authorization status from injectable seams (`EventStoreClient`, `ScriptRunner`).
-Default production wiring: `EventStoreClient` is real EventKit (T06) and
-`ScriptRunner` is real osascript (T13). Doctor only reads authorization status
-(never calls `requestAccess`). When Calendar/Reminders are denied, restricted,
-or not determined, those gaps appear under `missing`. Tests may inject
-`StubEventStoreClient` / `StubScriptRunner` to report backends as unwired.
+Runs **without** permission prompts. Reports backend wiring and authorization
+from injectable seams:
+
+| Seam | What it reports |
+|------|-----------------|
+| `EventStoreClient` | Calendar + Reminders EventKit status (`authorizationStatus` only; never `requestAccess`) |
+| `ScriptRunner` | Apple Events runner wired (`osascript`) or stub |
+| `AutomationPermissionClient` | Mail + Notes **Automation** TCC via `AEDeterminePermissionToAutomateTarget` with `askUserIfNeeded: false` |
+
+Default production wiring: real EventKit (T06), real osascript (T13), real AE
+Automation probe (T21). Tests inject mocks so unit checks never require live TCC.
+
+**EventKit gaps** (`missing` when not fully usable): denied, restricted,
+write-only, not determined. Messages point at
+`System Settings → Privacy & Security → Calendars|Reminders`.
+
+**Automation gaps** (`missing`): denied, not determined. Messages point at
+`System Settings → Privacy & Security → Automation` (enable Mail / Notes for
+this process). Status `notRunning` means the target app is not running so AE
+cannot resolve permission — reported under `backends` only (not a proven gap;
+open the app and re-run doctor to verify).
 
 JSON shape (production defaults; statuses depend on host TCC):
 
 ```json
 {
   "backends": {
-    "appleEvents": { "kind": "osascript", "wired": true },
+    "appleEvents": {
+      "kind": "osascript",
+      "mail": "authorized",
+      "notes": "authorized",
+      "wired": true
+    },
     "eventKit": {
       "calendar": "fullAccess",
       "kind": "eventkit",
@@ -522,12 +541,16 @@ JSON shape (production defaults; statuses depend on host TCC):
 }
 ```
 
+Automation status strings: `authorized`, `denied`, `notDetermined`,
+`notRunning`, `unavailable` (stub / unwired runner).
+
 When access is not yet granted, `ok` is false and `missing` lists actionable
-System Settings hints (e.g. Calendar access not determined / denied).
+System Settings hints (e.g. Calendar access denied; Mail Automation denied).
 
 Exit 0 when the report is produced successfully (gaps go in `missing`, not exit
 code).
 
+Text mode includes EventKit and Apple Events lines plus `missing:` bullets.
 #### EventStoreClient (T06 / T07)
 
 - Protocol `EventStoreClient`: `authorizationStatus(for:)` (no prompt) and

@@ -904,11 +904,14 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
             backing: FakeEventKitBacking(calendar: .fullAccess, reminders: .fullAccess)
         ),
         scriptRunner: MockScriptRunner(),
+        automation: MockAutomationPermissionClient(),
         version: "0.1.0"
     )
     #expect(report.backends.eventKit.kind == EKEventStoreClient.kind)
     #expect(report.backends.eventKit.calendar == .fullAccess)
     #expect(report.backends.eventKit.reminders == .fullAccess)
+    #expect(report.backends.appleEvents.mail == .authorized)
+    #expect(report.backends.appleEvents.notes == .authorized)
     #expect(report.ok == true)
     #expect(report.missing.isEmpty)
 }
@@ -1073,10 +1076,13 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
     let report = Doctor.probe(
         eventStore: StubEventStoreClient(),
         scriptRunner: OSAScriptRunner(process: RecordingOsascriptProcess()),
+        automation: MockAutomationPermissionClient(),
         version: "0.1.0"
     )
     #expect(report.backends.appleEvents.kind == OSAScriptRunner.kind)
     #expect(report.backends.appleEvents.wired == true)
+    #expect(report.backends.appleEvents.mail == .authorized)
+    #expect(report.backends.appleEvents.notes == .authorized)
     #expect(!report.missing.contains { $0.contains("ScriptRunner") })
 }
 
@@ -1210,6 +1216,7 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
     let report = Doctor.probe(
         eventStore: StubEventStoreClient(),
         scriptRunner: StubScriptRunner(),
+        automation: StubAutomationPermissionClient(),
         version: "0.1.0"
     )
     #expect(report.ok == false)
@@ -1219,6 +1226,8 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
     #expect(report.backends.eventKit.reminders == .unavailable)
     #expect(report.backends.appleEvents.kind == "stub")
     #expect(report.backends.appleEvents.wired == false)
+    #expect(report.backends.appleEvents.mail == .unavailable)
+    #expect(report.backends.appleEvents.notes == .unavailable)
     #expect(report.missing.contains { $0.contains("EventKit") })
     #expect(report.missing.contains { $0.contains("ScriptRunner") })
 }
@@ -1230,11 +1239,14 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
             reminders: .fullAccess
         ),
         scriptRunner: MockScriptRunner(stdout: ""),
+        automation: MockAutomationPermissionClient(),
         version: "9.9.9"
     )
     #expect(report.ok == true)
     #expect(report.missing.isEmpty)
     #expect(report.backends.appleEvents.wired == true)
+    #expect(report.backends.appleEvents.mail == .authorized)
+    #expect(report.backends.appleEvents.notes == .authorized)
     #expect(report.backends.eventKit.calendar == .fullAccess)
 }
 
@@ -1242,6 +1254,7 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
     let report = Doctor.probe(
         eventStore: MockEventStoreClient(calendar: .denied, reminders: .restricted),
         scriptRunner: MockScriptRunner(),
+        automation: MockAutomationPermissionClient(),
         version: "0.1.0"
     )
     #expect(report.ok == false)
@@ -1249,16 +1262,77 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
     #expect(
         report.missing.contains { $0.contains("Reminders") && $0.contains("restricted") }
     )
+    #expect(report.missing.contains { $0.contains("System Settings") })
+}
+
+@Test func doctorProbeReportsWriteOnlyCalendar() {
+    let report = Doctor.probe(
+        eventStore: MockEventStoreClient(calendar: .writeOnly, reminders: .fullAccess),
+        scriptRunner: MockScriptRunner(),
+        automation: MockAutomationPermissionClient(),
+        version: "0.1.0"
+    )
+    #expect(report.ok == false)
+    #expect(
+        report.missing.contains {
+            $0.contains("Calendar") && $0.contains("write-only") && $0.contains("System Settings")
+        }
+    )
+}
+
+@Test func doctorProbeReportsAutomationDeniedAndNotDetermined() {
+    let report = Doctor.probe(
+        eventStore: MockEventStoreClient(
+            calendar: .fullAccess,
+            reminders: .fullAccess
+        ),
+        scriptRunner: MockScriptRunner(),
+        automation: MockAutomationPermissionClient(mail: .denied, notes: .notDetermined),
+        version: "0.1.0"
+    )
+    #expect(report.ok == false)
+    #expect(report.backends.appleEvents.mail == .denied)
+    #expect(report.backends.appleEvents.notes == .notDetermined)
+    #expect(
+        report.missing.contains {
+            $0.contains("Mail") && $0.contains("denied") && $0.contains("Automation")
+        }
+    )
+    #expect(
+        report.missing.contains {
+            $0.contains("Notes") && $0.contains("not determined") && $0.contains("Automation")
+        }
+    )
+    #expect(report.missing.contains { $0.contains("System Settings") })
+}
+
+@Test func doctorProbeAutomationNotRunningIsNotMissing() {
+    let report = Doctor.probe(
+        eventStore: MockEventStoreClient(
+            calendar: .fullAccess,
+            reminders: .fullAccess
+        ),
+        scriptRunner: MockScriptRunner(),
+        automation: MockAutomationPermissionClient(mail: .notRunning, notes: .notRunning),
+        version: "0.1.0"
+    )
+    #expect(report.ok == true)
+    #expect(report.missing.isEmpty)
+    #expect(report.backends.appleEvents.mail == .notRunning)
+    #expect(report.backends.appleEvents.notes == .notRunning)
 }
 
 @Test func doctorFormatTextIncludesMissingBullets() {
     let report = Doctor.probe(
         eventStore: StubEventStoreClient(),
-        scriptRunner: StubScriptRunner()
+        scriptRunner: StubScriptRunner(),
+        automation: StubAutomationPermissionClient()
     )
     let text = Doctor.formatText(report)
     #expect(text.contains("macverbs doctor"))
     #expect(text.contains("EventKit: stub"))
+    #expect(text.contains("mail=unavailable"))
+    #expect(text.contains("notes=unavailable"))
     #expect(text.contains("missing:"))
     #expect(text.contains("EventKit client not wired"))
 }
@@ -1272,6 +1346,10 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
             reminders: .notDetermined
         )
         BackendClients.scriptRunner = OSAScriptRunner(process: RecordingOsascriptProcess())
+        BackendClients.automation = MockAutomationPermissionClient(
+            mail: .denied,
+            notes: .notDetermined
+        )
         defer { BackendClients.resetDefaults() }
 
         let code = MacverbsApp.run(arguments: ["--json", "doctor"])
@@ -1284,12 +1362,16 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
         let missing = obj?["missing"] as? [String]
         #expect(missing?.isEmpty == false)
         #expect(missing?.contains { $0.contains("Calendar") } == true)
+        #expect(missing?.contains { $0.contains("Mail") && $0.contains("Automation") } == true)
+        #expect(missing?.contains { $0.contains("System Settings") } == true)
         let backends = obj?["backends"] as? [String: Any]
         let eventKit = backends?["eventKit"] as? [String: Any]
         #expect(eventKit?["calendar"] as? String == "notDetermined")
         let appleEvents = backends?["appleEvents"] as? [String: Any]
         #expect(appleEvents?["kind"] as? String == OSAScriptRunner.kind)
         #expect(appleEvents?["wired"] as? Bool == true)
+        #expect(appleEvents?["mail"] as? String == "denied")
+        #expect(appleEvents?["notes"] as? String == "notDetermined")
         #expect(try pipes.readError().isEmpty)
     }
 }
@@ -1301,6 +1383,10 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
             reminders: .denied
         )
         BackendClients.scriptRunner = OSAScriptRunner(process: RecordingOsascriptProcess())
+        BackendClients.automation = MockAutomationPermissionClient(
+            mail: .denied,
+            notes: .denied
+        )
         defer { BackendClients.resetDefaults() }
 
         let code = MacverbsApp.run(arguments: ["doctor"])
@@ -1309,6 +1395,8 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
         #expect(text.contains("macverbs doctor"))
         #expect(text.contains("missing:"))
         #expect(text.contains("Calendar"))
+        #expect(text.contains("Mail"))
+        #expect(text.contains("System Settings"))
         #expect(try pipes.readError().isEmpty)
     }
 }
@@ -1319,6 +1407,7 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
             backing: FakeEventKitBacking(calendar: .fullAccess, reminders: .fullAccess)
         )
         BackendClients.scriptRunner = OSAScriptRunner(process: RecordingOsascriptProcess())
+        BackendClients.automation = MockAutomationPermissionClient()
         defer { BackendClients.resetDefaults() }
 
         let code = MacverbsApp.run(arguments: ["--json", "doctor"])
@@ -1330,6 +1419,9 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
         let backends = obj?["backends"] as? [String: Any]
         let eventKit = backends?["eventKit"] as? [String: Any]
         #expect(eventKit?["kind"] as? String == EKEventStoreClient.kind)
+        let appleEvents = backends?["appleEvents"] as? [String: Any]
+        #expect(appleEvents?["mail"] as? String == "authorized")
+        #expect(appleEvents?["notes"] as? String == "authorized")
         #expect(try pipes.readError().isEmpty)
     }
 }
@@ -1337,6 +1429,12 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
 @Test func doctorHelpListsCommand() {
     let help = Macverbs.helpMessage()
     #expect(help.contains("doctor"))
+}
+
+@Test func mockAutomationPermissionClientIsInjectable() {
+    let mock = MockAutomationPermissionClient(mail: .denied, notes: .notRunning)
+    #expect(mock.authorizationStatus(for: .mail) == .denied)
+    #expect(mock.authorizationStatus(for: .notes) == .notRunning)
 }
 
 // MARK: - Calendar list (T07)

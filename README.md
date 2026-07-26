@@ -31,13 +31,16 @@ the system prompt; afterward the choice lives under:
 - **System Settings → Privacy & Security → Calendars**
 - **System Settings → Privacy & Security → Reminders**
 
-`macverbs doctor` reports authorization **without** prompting. Denied or
-restricted access yields domain errors (exit 1) with the same Settings path.
+`macverbs doctor` reports authorization **without** prompting: EventKit
+(Calendar / Reminders) and Automation (Mail / Notes). Denied or restricted
+EventKit access yields domain errors (exit 1) with the same Settings path.
 Full access is required for list/read verbs; write-only is treated as
 insufficient.
 
-Mail and Notes use **Apple Events** (Automation) when those verbs land; grant
-control for Mail / Notes when prompted.
+Mail and Notes use **Apple Events** (Automation). Grant control for Mail /
+Notes when prompted, or under:
+
+- **System Settings → Privacy & Security → Automation**
 
 ## Develop (mise)
 

@@ -11,7 +11,7 @@ struct DoctorReport: Codable, Equatable, Sendable {
     var ok: Bool
     /// Backend readiness snapshot (no TCC prompts).
     var backends: DoctorBackends
-    /// Human-readable gaps (empty when fully ready).
+    /// Human-readable gaps with System Settings hints (empty when fully ready).
     var missing: [String]
 }
 
@@ -32,6 +32,10 @@ struct DoctorAppleEventsBackend: Codable, Equatable, Sendable {
     var kind: String
     /// Whether a real runner is available (false for stub).
     var wired: Bool
+    /// Automation TCC for Mail (Apple Events).
+    var mail: AutomationAuthorizationStatus
+    /// Automation TCC for Notes (Apple Events).
+    var notes: AutomationAuthorizationStatus
 }
 
 // MARK: - Probe (pure; injectable clients)
@@ -41,6 +45,7 @@ enum Doctor {
     static func probe(
         eventStore: any EventStoreClient = BackendClients.eventStore,
         scriptRunner: any ScriptRunner = BackendClients.scriptRunner,
+        automation: any AutomationPermissionClient = BackendClients.automation,
         version: String = Version.current
     ) -> DoctorReport {
         let calendar = eventStore.authorizationStatus(for: .event)
@@ -48,6 +53,16 @@ enum Doctor {
         let eventKitKind = eventKitKindName(eventStore)
         let scriptKind = scriptRunnerKindName(scriptRunner)
         let scriptWired = !(scriptRunner is StubScriptRunner)
+
+        let mailStatus: AutomationAuthorizationStatus
+        let notesStatus: AutomationAuthorizationStatus
+        if scriptWired {
+            mailStatus = automation.authorizationStatus(for: .mail)
+            notesStatus = automation.authorizationStatus(for: .notes)
+        } else {
+            mailStatus = .unavailable
+            notesStatus = .unavailable
+        }
 
         var missing: [String] = []
         if eventStore is StubEventStoreClient
@@ -58,30 +73,17 @@ enum Doctor {
                 "EventKit client not wired (Calendar, Reminders; see T06)"
             )
         } else {
-            if calendar == .denied || calendar == .restricted {
-                missing.append(
-                    "Calendar access \(calendar.rawValue); enable in System Settings → Privacy & Security → Calendars"
-                )
-            } else if calendar == .notDetermined {
-                missing.append(
-                    "Calendar access not determined (will prompt on first use)"
-                )
-            }
-            if reminders == .denied || reminders == .restricted {
-                missing.append(
-                    "Reminders access \(reminders.rawValue); enable in System Settings → Privacy & Security → Reminders"
-                )
-            } else if reminders == .notDetermined {
-                missing.append(
-                    "Reminders access not determined (will prompt on first use)"
-                )
-            }
+            appendEventKitGaps(entity: .event, status: calendar, into: &missing)
+            appendEventKitGaps(entity: .reminder, status: reminders, into: &missing)
         }
 
         if !scriptWired {
             missing.append(
                 "ScriptRunner not wired (Mail, Notes via Apple Events; see T13)"
             )
+        } else {
+            appendAutomationGaps(target: .mail, status: mailStatus, into: &missing)
+            appendAutomationGaps(target: .notes, status: notesStatus, into: &missing)
         }
 
         let backends = DoctorBackends(
@@ -92,7 +94,9 @@ enum Doctor {
             ),
             appleEvents: DoctorAppleEventsBackend(
                 kind: scriptKind,
-                wired: scriptWired
+                wired: scriptWired,
+                mail: mailStatus,
+                notes: notesStatus
             )
         )
 
@@ -112,7 +116,7 @@ enum Doctor {
             "EventKit: \(report.backends.eventKit.kind) (calendar=\(report.backends.eventKit.calendar.rawValue), reminders=\(report.backends.eventKit.reminders.rawValue))"
         )
         lines.append(
-            "Apple Events: \(report.backends.appleEvents.kind) (wired=\(report.backends.appleEvents.wired))"
+            "Apple Events: \(report.backends.appleEvents.kind) (wired=\(report.backends.appleEvents.wired), mail=\(report.backends.appleEvents.mail.rawValue), notes=\(report.backends.appleEvents.notes.rawValue))"
         )
         if report.missing.isEmpty {
             lines.append("ok: nothing missing")
@@ -123,6 +127,65 @@ enum Doctor {
             }
         }
         return lines.joined(separator: "\n")
+    }
+
+    // MARK: Gap messages (actionable System Settings paths)
+
+    private static let automationSettings =
+        "System Settings → Privacy & Security → Automation"
+
+    private static func appendEventKitGaps(
+        entity: EventEntityType,
+        status: EventAuthorizationStatus,
+        into missing: inout [String]
+    ) {
+        let name = entity.displayName
+        let settings =
+            "System Settings → Privacy & Security → \(entity.privacySettingsPane)"
+        switch status {
+        case .denied:
+            missing.append("\(name) access denied; enable in \(settings)")
+        case .restricted:
+            missing.append("\(name) access restricted; enable in \(settings)")
+        case .writeOnly:
+            missing.append(
+                "\(name) access is write-only; full access required — enable in \(settings)"
+            )
+        case .notDetermined:
+            missing.append(
+                "\(name) access not determined (will prompt on first use); or enable in \(settings)"
+            )
+        case .unavailable, .fullAccess, .authorized:
+            break
+        }
+    }
+
+    private static func appendAutomationGaps(
+        target: AutomationTarget,
+        status: AutomationAuthorizationStatus,
+        into missing: inout [String]
+    ) {
+        let name = target.displayName
+        switch status {
+        case .denied:
+            missing.append(
+                "\(name) Automation denied; enable \(name) under \(automationSettings)"
+            )
+        case .notDetermined:
+            missing.append(
+                "\(name) Automation not determined (will prompt on first use); or enable \(name) under \(automationSettings)"
+            )
+        case .unavailable:
+            missing.append(
+                "\(name) Automation status unavailable"
+            )
+        case .notRunning:
+            // Not a proven gap: AE API requires the target process to be running.
+            // Report status in backends; re-run doctor with the app open to verify.
+            break
+        case .authorized:
+            break
+        }
     }
 
     private static func eventKitKindName(_ client: any EventStoreClient) -> String {
