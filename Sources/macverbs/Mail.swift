@@ -37,10 +37,47 @@ struct MailMessageBody: Codable, Equatable, Sendable {
     var body: String
 }
 
+/// Result of `mail archive` / `mail delete` (verified move counts).
+///
+/// Keys match the oracle: `account`, `action`, `moved`, `requested`, `remaining`;
+/// optional `unsupported` when Gmail archive is refused honestly.
+struct MailMoveResult: Equatable, Sendable {
+    var account: String
+    /// `"archive"` or `"delete"`.
+    var action: String
+    var moved: Int
+    var requested: Int
+    var remaining: Int
+    /// Present only when the operation is refused (e.g. Gmail archive).
+    var unsupported: String?
+}
+
+extension MailMoveResult: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case account, action, moved, requested, remaining, unsupported
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(account, forKey: .account)
+        try container.encode(action, forKey: .action)
+        try container.encode(moved, forKey: .moved)
+        try container.encode(requested, forKey: .requested)
+        try container.encode(remaining, forKey: .remaining)
+        try container.encodeIfPresent(unsupported, forKey: .unsupported)
+    }
+}
+
 /// Mailbox target for `mail list` (`inbox` or `archive`).
 enum MailMailbox: String, CaseIterable, ExpressibleByArgument, Sendable {
     case inbox
     case archive
+}
+
+/// Move destination for `mail archive` / `mail delete`.
+enum MailMoveTarget: String, Sendable {
+    case archive
+    case delete
 }
 
 // MARK: - AppleScript builders (oracle: apple.scripts)
@@ -66,6 +103,17 @@ enum MailScripts {
     static let archiveNames =
         #"{"[Gmail]/Todos os e-mails", "[Gmail]/All Mail", "Archive", "Arquivo Morto", "Arquivo"}"#
 
+    /// Trash / Deleted name candidates (Gmail + Exchange + generic).
+    ///
+    /// Oracle `_TRASH_NAMES`.
+    static let trashNames =
+        #"{"[Gmail]/Lixeira", "[Gmail]/Trash", "Deleted Messages", "Itens Excluídos", "Deleted Items", "Lixeira", "Trash"}"#
+
+    /// Sentinela when archive target resolves to Gmail All Mail (oracle `ARCHIVE_UNSUPPORTED`).
+    ///
+    /// Moving to All Mail does not remove INBOX; refuse instead of reporting a false move.
+    static let archiveUnsupportedSentinel = "__ARCHIVE_UNSUPPORTED__"
+
     /// Account filter expression: empty `account` → all accounts; else name match.
     ///
     /// Oracle `_acct_filter`.
@@ -82,6 +130,103 @@ enum MailScripts {
         case .archive:
             return archiveNames
         }
+    }
+
+    /// Destination box-names for archive vs delete (oracle `mail_move`).
+    static func destinationBoxNames(for target: MailMoveTarget) -> String {
+        switch target {
+        case .archive:
+            return archiveNames
+        case .delete:
+            return trashNames
+        }
+    }
+
+    /// AppleScript block: resolve `varName` to the first existing mailbox in `candidatesExpr`.
+    ///
+    /// Oracle `_resolve_box`. Indentation matches the body of `mail_move`.
+    static func resolveBox(varName: String, candidatesExpr: String) -> String {
+        """
+                    set \(varName) to missing value
+                    repeat with c in \(candidatesExpr)
+                        try
+                            set \(varName) to mailbox c of acct
+                            exit repeat
+                        end try
+                    end repeat
+        """
+    }
+
+    /// Gmail All Mail guard (archive only). Returns empty for delete.
+    ///
+    /// Oracle `_gmail_allmail_guard`.
+    static func gmailAllMailGuard(for target: MailMoveTarget) -> String {
+        guard target == .archive else {
+            return ""
+        }
+        let sentinel = archiveUnsupportedSentinel
+        return """
+                            set tbName to (name of tb)
+                            if tbName contains "Todos os e-mails" or tbName contains "All Mail" then
+                                return "\(sentinel)" & fs & tbName
+                            end if
+            """
+    }
+
+    /// AppleScript list literal of escaped message ids: `{"a", "b"}`.
+    static func idListLiteral(_ ids: [String]) -> String {
+        let items = ids.map { "\"\(AppleScript.escape($0))\"" }.joined(separator: ", ")
+        return "{\(items)}"
+    }
+
+    /// Move messages from inbox to archive or trash, then re-count remaining in inbox.
+    ///
+    /// Emits `requested{FS}moved{FS}remaining`. On Gmail archive (All Mail), emits
+    /// `__ARCHIVE_UNSUPPORTED__{FS}{boxName}` without moving.
+    static func move(account: String, ids: [String], target: MailMoveTarget) -> String {
+        let a = AppleScript.escape(account)
+        let boxes = destinationBoxNames(for: target)
+        let idList = idListLiteral(ids)
+        let resolveInbox = resolveBox(varName: "ib", candidatesExpr: "inboxNames")
+        let resolveTarget = resolveBox(varName: "tb", candidatesExpr: "boxNames")
+        let guardBlock = gmailAllMailGuard(for: target)
+        return separatorsHeader
+            + """
+            set inboxNames to \(inboxNames)
+            set boxNames to \(boxes)
+            set idList to \(idList)
+            tell application "Mail"
+                repeat with acct in accounts
+                    if (name of acct) is "\(a)" then
+            \(resolveInbox)
+            \(resolveTarget)
+                        if ib is missing value then error "inbox not found for \(a)"
+                        if tb is missing value then error "destination mailbox not found for \(a)"
+            \(guardBlock)
+                        repeat with mid in idList
+                            set ms to (contents of mid)
+                            try
+                                set matches to (messages of ib whose message id is ms)
+                                repeat with m in matches
+                                    move m to tb
+                                end repeat
+                            end try
+                        end repeat
+                        delay 1
+                        set remaining to 0
+                        repeat with mid in idList
+                            set ms to (contents of mid)
+                            try
+                                set remaining to remaining + (count of (messages of ib whose message id is ms))
+                            end try
+                        end repeat
+                        set reqCount to (count of idList)
+                        return (reqCount as text) & fs & ((reqCount - remaining) as text) & fs & (remaining as text)
+                    end if
+                end repeat
+                error "account \(a) not found"
+            end tell
+            """
     }
 
     /// List configured accounts: name, type, email (RS/FS delimited).
@@ -284,6 +429,88 @@ enum Mail {
         return MailMessageBody(body: body)
     }
 
+    /// Move messages from inbox to archive or trash; re-counts remaining in inbox.
+    ///
+    /// `--account` is required. Gmail archive (All Mail) is refused with
+    /// `unsupported` and `moved: 0` (never report a silent no-op as success).
+    static func move(
+        account: String,
+        ids: [String],
+        target: MailMoveTarget,
+        runner: any ScriptRunner = BackendClients.scriptRunner,
+        timeout: TimeInterval = defaultTimeout
+    ) throws -> MailMoveResult {
+        guard !account.isEmpty else {
+            throw MacverbsError.domain("--account is required for archive/delete")
+        }
+        guard !ids.isEmpty else {
+            throw MacverbsError.domain("at least one message id is required")
+        }
+        let raw = try runner.run(
+            script: MailScripts.move(account: account, ids: ids, target: target),
+            timeout: timeout
+        )
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sentinel = MailScripts.archiveUnsupportedSentinel
+        if trimmed.hasPrefix(sentinel) {
+            // Gmail: moving to All Mail does not remove INBOX. Refuse honestly.
+            let box: String = {
+                let parts = trimmed.split(
+                    separator: Character(AppleScript.fieldSeparator),
+                    maxSplits: 1,
+                    omittingEmptySubsequences: false
+                )
+                if parts.count > 1 {
+                    return String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                return ""
+            }()
+            let boxLabel = box.isEmpty ? "All Mail" : box
+            let reason =
+                "archive is not supported on this account (Gmail): moving to "
+                + "'\(boxLabel)' does not remove the message from the inbox. "
+                + "Use delete or archive manually in Mail."
+            return MailMoveResult(
+                account: account,
+                action: target.rawValue,
+                moved: 0,
+                requested: ids.count,
+                remaining: ids.count,
+                unsupported: reason
+            )
+        }
+        let recs = AppleScript.parseRecords(raw, fields: ["requested", "moved", "remaining"])
+        let row = recs.first ?? ["requested": "0", "moved": "0", "remaining": "0"]
+        return MailMoveResult(
+            account: account,
+            action: target.rawValue,
+            moved: Int(row["moved"] ?? "") ?? 0,
+            requested: Int(row["requested"] ?? "") ?? 0,
+            remaining: Int(row["remaining"] ?? "") ?? 0,
+            unsupported: nil
+        )
+    }
+
+    /// Archive messages (`mail archive`).
+    static func archive(
+        account: String,
+        ids: [String],
+        runner: any ScriptRunner = BackendClients.scriptRunner,
+        timeout: TimeInterval = defaultTimeout
+    ) throws -> MailMoveResult {
+        try move(account: account, ids: ids, target: .archive, runner: runner, timeout: timeout)
+    }
+
+    /// Delete messages by moving to trash (`mail delete`).
+    static func delete(
+        account: String,
+        ids: [String],
+        runner: any ScriptRunner = BackendClients.scriptRunner,
+        timeout: TimeInterval = defaultTimeout
+    ) throws -> MailMoveResult {
+        try move(account: account, ids: ids, target: .delete, runner: runner, timeout: timeout)
+    }
+
     // MARK: Text formatters
 
     /// Human lines for `mail accounts` (English; verb/flags match oracle).
@@ -321,6 +548,19 @@ enum Mail {
         }
         return result.body
     }
+
+    /// Human text for `mail archive` / `mail delete` (verified counts).
+    static func formatMove(_ result: MailMoveResult) -> String {
+        if let unsupported = result.unsupported {
+            return "\(result.account): \(unsupported)"
+        }
+        let verb = result.action == "archive" ? "archived" : "deleted"
+        var line = "\(result.account): \(result.moved)/\(result.requested) \(verb)"
+        if result.remaining > 0 {
+            line += "; \(result.remaining) remaining in inbox"
+        }
+        return line
+    }
 }
 
 // MARK: - CLI
@@ -335,6 +575,8 @@ struct MailCommand: ParsableCommand {
             MailUnreadCommand.self,
             MailListCommand.self,
             MailReadCommand.self,
+            MailArchiveCommand.self,
+            MailDeleteCommand.self,
         ]
     )
 }
@@ -403,5 +645,55 @@ struct MailReadCommand: ParsableCommand {
     func run() throws {
         let result = try Mail.read(messageID: messageId, account: account)
         try CLIOutput.emit(result, text: Mail.formatBody)
+    }
+}
+
+/// `macverbs mail archive <ids…> --account` (verified; Gmail → unsupported).
+struct MailArchiveCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "archive",
+        abstract: "Archive messages (move to archive; effect verified)."
+    )
+
+    @Argument(help: "Message-ID header value(s) from mail list.")
+    var ids: [String]
+
+    @Option(name: .long, help: "Account that owns the messages (required).")
+    var account: String
+
+    func validate() throws {
+        if ids.isEmpty {
+            throw ValidationError("At least one message id is required.")
+        }
+    }
+
+    func run() throws {
+        let result = try Mail.archive(account: account, ids: ids)
+        try CLIOutput.emit(result, text: Mail.formatMove)
+    }
+}
+
+/// `macverbs mail delete <ids…> --account` (move to trash; effect verified).
+struct MailDeleteCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "delete",
+        abstract: "Delete messages (move to trash; effect verified)."
+    )
+
+    @Argument(help: "Message-ID header value(s) from mail list.")
+    var ids: [String]
+
+    @Option(name: .long, help: "Account that owns the messages (required).")
+    var account: String
+
+    func validate() throws {
+        if ids.isEmpty {
+            throw ValidationError("At least one message id is required.")
+        }
+    }
+
+    func run() throws {
+        let result = try Mail.delete(account: account, ids: ids)
+        try CLIOutput.emit(result, text: Mail.formatMove)
     }
 }
