@@ -1000,7 +1000,8 @@ private func utcDate(
     let now = utcDate(2026, 7, 26, 15, 30)
     let range = try CalendarService.dateRange(days: 7, now: now, calendar: cal)
     #expect(range.start == utcDate(2026, 7, 26))
-    #expect(range.end == utcDate(2026, 8, 2))
+    // Exclusive end: start of day after today+7 (= Aug 3 when today is Jul 26).
+    #expect(range.end == utcDate(2026, 8, 3))
 }
 
 @Test func calendarDateRangeTodayOnly() throws {
@@ -1259,7 +1260,7 @@ private func utcDate(
         )
         defer { BackendClients.resetDefaults() }
 
-        let code = MacverbsApp.run(arguments: ["calendar", "list", "--days", "-3"])
+        let code = MacverbsApp.run(arguments: ["calendar", "list", "--days=-3"])
         #expect(code == ExitCodes.domain)
         let err = try pipes.readError()
         #expect(err.contains("error: --days must be >= 0"))
