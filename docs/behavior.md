@@ -237,8 +237,8 @@ Text: `created: Standup`.
 | archive | `ids…`, `--account` (required); **Gmail → unsupported** (honest refuse) | **done** (T16) |
 | delete | `ids…`, `--account` (required) | **done** (T16) |
 | attachments | `message-id`, `--dest` (required), `--account` | **done** (T17) |
-| draft | `message-id`, `--body-file` (required), `--attach`… (repeatable), `--account`; **never send** | planned |
-| compose | `--subject` `--body-file` (required) `--to`… `--cc`… `--account`; **never send** | planned |
+| draft | `message-id`, `--body-file` (required), `--attach`… (repeatable), `--account`; **never send** | **done** (T18) |
+| compose | `--subject` `--body-file` (required) `--to`… `--cc`… `--account`; **never send** | **done** (T18) |
 
 
 #### mail accounts (T14)
@@ -381,6 +381,59 @@ file names. Text: `saved to <dest>:` plus `- name` lines, or `no attachments.`
   "saved": [
     "foto.jpg",
     "doc.pdf"
+  ]
+}
+```
+
+#### mail draft / compose (T18)
+
+Draft creates a **reply** draft for an existing message (Message-ID from
+`mail list`). Compose creates a **new** outgoing message draft (not a reply).
+Both **never send** — only `save` (drafts land in Drafts).
+
+`draft`:
+- Required `--body-file` (UTF-8 body). Optional `--account` narrows search.
+- Optional `--attach` (repeatable): each path is tilde-expanded and made
+  absolute; missing files → exit 1 before scripting.
+- Searches inbox **and** archive (same candidates as `mail read`).
+- AppleScript: `reply msg without opening window`, then `set content`, then
+  attachments on `content of newMsg` with `delay 1` after each
+  `make new attachment` so Mail materializes them before `save`. Opening a
+  composition window would make `set content` a silent no-op and drop
+  attachments.
+- Missing message → exit 1 (`message <id> not found`).
+
+JSON draft: `{ "message_id", "status", "attachments" }` (`attachments` are the
+absolute paths requested; `status` is typically `"OK"`). Text:
+`draft created (reply to <id>), not sent.`
+
+`compose`:
+- Required `--subject` and `--body-file`. Optional `--to` / `--cc` (repeatable;
+  empty allowed so you can fill later in Mail). Optional `--account` selects
+  the sender by account name (empty = Mail default).
+- Never calls `send`; only `save`.
+
+JSON compose: `{ "subject", "to", "cc" }`. Text:
+`new draft created, not sent. Subject: … | To: …[, cc: …]`.
+
+```json
+{
+  "attachments": [
+    "/tmp/a.pdf"
+  ],
+  "message_id": "<msg1@example.com>",
+  "status": "OK"
+}
+```
+
+```json
+{
+  "cc": [
+    "c@example.com"
+  ],
+  "subject": "Standup notes",
+  "to": [
+    "a@example.com"
   ]
 }
 ```

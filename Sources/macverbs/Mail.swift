@@ -93,6 +93,41 @@ extension MailAttachmentsResult: Encodable {
     }
 }
 
+/// Result of `mail draft` (reply draft; never sends).
+///
+/// JSON keys match the oracle: `message_id`, `status`, `attachments`.
+struct MailDraftResult: Equatable, Sendable {
+    var messageID: String
+    /// Script status string (typically `"OK"`).
+    var status: String
+    /// Absolute paths of attachments that were requested (may be empty).
+    var attachments: [String]
+}
+
+extension MailDraftResult: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case messageID = "message_id"
+        case status
+        case attachments
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(messageID, forKey: .messageID)
+        try container.encode(status, forKey: .status)
+        try container.encode(attachments, forKey: .attachments)
+    }
+}
+
+/// Result of `mail compose` (new draft; never sends).
+///
+/// JSON keys match the oracle: `subject`, `to`, `cc`.
+struct MailComposeResult: Codable, Equatable, Sendable {
+    var subject: String
+    var to: [String]
+    var cc: [String]
+}
+
 /// Mailbox target for `mail list` (`inbox` or `archive`).
 enum MailMailbox: String, CaseIterable, ExpressibleByArgument, Sendable {
     case inbox
@@ -202,6 +237,19 @@ enum MailScripts {
     static func idListLiteral(_ ids: [String]) -> String {
         let items = ids.map { "\"\(AppleScript.escape($0))\"" }.joined(separator: ", ")
         return "{\(items)}"
+    }
+
+    /// AppleScript list literal of addresses: `{"a@x", "b@x"}` (oracle `_addr_list`).
+    static func addressList(_ addresses: [String]) -> String {
+        let items = addresses.map { "\"\(AppleScript.escape($0))\"" }.joined(separator: ", ")
+        return "{\(items)}"
+    }
+
+    /// Multi-line body as AppleScript expression joined with `return`
+    /// (oracle `_as_multiline`; AppleScript has no multi-line string literal).
+    static func asMultiline(_ body: String) -> String {
+        let lines = body.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        return lines.map { "\"\(AppleScript.escape($0))\"" }.joined(separator: " & return & ")
     }
 
     /// Move messages from inbox to archive or trash, then re-count remaining in inbox.
@@ -404,6 +452,113 @@ enum MailScripts {
                     end if
                 end repeat
                 return "__NOTFOUND__"
+            end tell
+            """
+    }
+
+    /// Create a reply draft for a message (inbox + archive search); never sends.
+    ///
+    /// Uses `reply … without opening window` so `set content` is not a silent
+    /// no-op. Attachments go on `content of newMsg` with `delay 1` after each
+    /// `make new attachment` so Mail materializes them before `save` (oracle /
+    /// Mail.app armadilhas). Returns `"OK"` or `"__NOTFOUND__"`.
+    static func draftReply(
+        messageID: String,
+        body: String,
+        account: String = "",
+        attachments: [String] = []
+    ) -> String {
+        let mid = AppleScript.escape(messageID)
+        let filter = accountFilter(account)
+        let bodyExpr = asMultiline(body)
+        let attachBlock: String
+        if attachments.isEmpty {
+            attachBlock = ""
+        } else {
+            let attachLines =
+                attachments.map { path in
+                    let p = AppleScript.escape(path)
+                    return """
+
+                                                    make new attachment with properties {file name:(POSIX file "\(p)")} at after the last paragraph
+                                                    delay 1
+                        """
+                }
+                .joined()
+            attachBlock = """
+
+                                    tell content of newMsg\(attachLines)
+                                    end tell
+                """
+        }
+        return """
+            set boxNames to \(inboxNames) & \(archiveNames)
+            tell application "Mail"
+                repeat with acct in accounts
+                    if \(filter) then
+                        repeat with c in boxNames
+                            try
+                                set mb to mailbox c of acct
+                                set msgs to (messages of mb whose message id is "\(mid)")
+                                if (count of msgs) > 0 then
+                                    set msg to item 1 of msgs
+                                    set newMsg to reply msg without opening window
+                                    tell newMsg
+                                        set content to (\(bodyExpr))
+                                    end tell\(attachBlock)
+                                    save newMsg
+                                    return "OK"
+                                end if
+                            end try
+                        end repeat
+                    end if
+                end repeat
+                return "__NOTFOUND__"
+            end tell
+            """
+    }
+
+    /// Create a new outgoing message draft (not a reply); never sends.
+    ///
+    /// Optional `account` selects the sender by account name. Empty recipients
+    /// are allowed (fill later in Mail). Saves with `save`; never calls `send`.
+    static func compose(
+        subject: String,
+        body: String,
+        to: [String],
+        cc: [String] = [],
+        account: String = ""
+    ) -> String {
+        let subj = AppleScript.escape(subject)
+        let acct = AppleScript.escape(account)
+        let bodyExpr = asMultiline(body)
+        let toList = addressList(to)
+        let ccList = addressList(cc)
+        return """
+            tell application "Mail"
+                set senderAddr to ""
+                if "\(acct)" is not "" then
+                    repeat with acct in accounts
+                        if name of acct is "\(acct)" then
+                            try
+                                set senderAddr to item 1 of (email addresses of acct)
+                            end try
+                            exit repeat
+                        end if
+                    end repeat
+                end if
+                set newMsg to make new outgoing message with properties {subject:"\(subj)", content:(\(bodyExpr)), visible:true}
+                tell newMsg
+                    if senderAddr is not "" then set sender to senderAddr
+                    repeat with a in \(toList)
+                        make new to recipient at end of to recipients with properties {address:a}
+                    end repeat
+                    repeat with a in \(ccList)
+                        make new cc recipient at end of cc recipients with properties {address:a}
+                    end repeat
+                end tell
+                save newMsg
+                return "OK"
             end tell
             """
     }
@@ -617,6 +772,96 @@ enum Mail {
         )
     }
 
+    /// Create a reply draft (never sends). Body is the message content;
+    /// attachments are absolute paths that must already exist.
+    ///
+    /// Missing message → domain error (`message <id> not found`).
+    static func draft(
+        messageID: String,
+        body: String,
+        account: String = "",
+        attachments: [String] = [],
+        runner: any ScriptRunner = BackendClients.scriptRunner,
+        timeout: TimeInterval = defaultTimeout
+    ) throws -> MailDraftResult {
+        let raw = try runner.run(
+            script: MailScripts.draftReply(
+                messageID: messageID,
+                body: body,
+                account: account,
+                attachments: attachments
+            ),
+            timeout: timeout
+        )
+        let status = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if status == notFoundSentinel {
+            throw MacverbsError.domain("message \(messageID) not found")
+        }
+        return MailDraftResult(
+            messageID: messageID,
+            status: status,
+            attachments: attachments
+        )
+    }
+
+    /// Create a new compose draft (never sends).
+    static func compose(
+        subject: String,
+        body: String,
+        to: [String] = [],
+        cc: [String] = [],
+        account: String = "",
+        runner: any ScriptRunner = BackendClients.scriptRunner,
+        timeout: TimeInterval = defaultTimeout
+    ) throws -> MailComposeResult {
+        _ = try runner.run(
+            script: MailScripts.compose(
+                subject: subject,
+                body: body,
+                to: to,
+                cc: cc,
+                account: account
+            ),
+            timeout: timeout
+        )
+        return MailComposeResult(subject: subject, to: to, cc: cc)
+    }
+
+    /// Read UTF-8 body from `--body-file` (oracle CLI).
+    static func readBodyFile(_ path: String) throws -> String {
+        let expanded = expandPath(path)
+        do {
+            return try String(contentsOfFile: expanded, encoding: .utf8)
+        } catch {
+            throw MacverbsError.domain("could not read --body-file: \(error.localizedDescription)")
+        }
+    }
+
+    /// Expand `~`, make absolute, and require each attach path exists.
+    static func resolveAttachmentPaths(_ paths: [String]) throws -> [String] {
+        var resolved: [String] = []
+        var missing: [String] = []
+        for path in paths {
+            let abs = expandPath(path)
+            if FileManager.default.fileExists(atPath: abs) {
+                resolved.append(abs)
+            } else {
+                missing.append(abs)
+            }
+        }
+        if !missing.isEmpty {
+            let list = missing.joined(separator: ", ")
+            throw MacverbsError.domain("attachment(s) not found: \(list)")
+        }
+        return resolved
+    }
+
+    /// Absolute path: tilde expansion + CWD-relative resolution (oracle abspath).
+    static func expandPath(_ path: String) -> String {
+        let expanded = (path as NSString).expandingTildeInPath
+        return URL(fileURLWithPath: expanded).standardizedFileURL.path
+    }
+
     // MARK: Text formatters
 
     /// Human lines for `mail accounts` (English; verb/flags match oracle).
@@ -676,6 +921,21 @@ enum Mail {
         let lines = result.saved.map { "- \($0)" }.joined(separator: "\n")
         return "saved to \(result.destDir):\n\(lines)"
     }
+
+    /// Human text for `mail draft` (English; oracle shape).
+    static func formatDraft(_ result: MailDraftResult) -> String {
+        "draft created (reply to \(result.messageID)), not sent."
+    }
+
+    /// Human text for `mail compose` (English; oracle shape).
+    static func formatCompose(_ result: MailComposeResult) -> String {
+        let toPart = result.to.joined(separator: ", ")
+        let ccPart =
+            result.cc.isEmpty
+            ? ""
+            : ", cc: \(result.cc.joined(separator: ", "))"
+        return "new draft created, not sent. Subject: \(result.subject) | To: \(toPart)\(ccPart)"
+    }
 }
 
 // MARK: - CLI
@@ -693,6 +953,8 @@ struct MailCommand: ParsableCommand {
             MailArchiveCommand.self,
             MailDeleteCommand.self,
             MailAttachmentsCommand.self,
+            MailDraftCommand.self,
+            MailComposeCommand.self,
         ]
     )
 }
@@ -837,5 +1099,88 @@ struct MailAttachmentsCommand: ParsableCommand {
             account: account
         )
         try CLIOutput.emit(result, text: Mail.formatAttachments)
+    }
+}
+
+/// `macverbs mail draft <message-id> --body-file FILE [--attach]… [--account]`.
+///
+/// Creates a reply draft only; never sends.
+struct MailDraftCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "draft",
+        abstract: "Create a reply draft to a message (never sends)."
+    )
+
+    @Argument(help: "Message-ID header value (from mail list).")
+    var messageId: String
+
+    @Option(name: .long, help: "File with the draft body (required).")
+    var bodyFile: String
+
+    @Option(name: .long, help: "Filter by account name (empty = all accounts).")
+    var account: String = ""
+
+    @Option(
+        name: .long,
+        parsing: .singleValue,
+        help: "File path to attach (repeatable)."
+    )
+    var attach: [String] = []
+
+    func run() throws {
+        let body = try Mail.readBodyFile(bodyFile)
+        let attachments = try Mail.resolveAttachmentPaths(attach)
+        let result = try Mail.draft(
+            messageID: messageId,
+            body: body,
+            account: account,
+            attachments: attachments
+        )
+        try CLIOutput.emit(result, text: Mail.formatDraft)
+    }
+}
+
+/// `macverbs mail compose --subject S --body-file FILE [--to]… [--cc]… [--account]`.
+///
+/// Creates a new message draft only; never sends.
+struct MailComposeCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "compose",
+        abstract: "Create a new email draft (never sends)."
+    )
+
+    @Option(name: .long, help: "Subject line (required).")
+    var subject: String
+
+    @Option(name: .long, help: "File with the draft body (required).")
+    var bodyFile: String
+
+    @Option(
+        name: .long,
+        parsing: .singleValue,
+        help: "To recipient (repeatable; empty = fill later in Mail)."
+    )
+    var to: [String] = []
+
+    @Option(
+        name: .long,
+        parsing: .singleValue,
+        help: "Cc recipient (repeatable)."
+    )
+    var cc: [String] = []
+
+    @Option(name: .long, help: "Sender account name (empty = Mail default).")
+    var account: String = ""
+
+    func run() throws {
+        let body = try Mail.readBodyFile(bodyFile)
+        let result = try Mail.compose(
+            subject: subject,
+            body: body,
+            to: to,
+            cc: cc,
+            account: account
+        )
+        try CLIOutput.emit(result, text: Mail.formatCompose)
     }
 }

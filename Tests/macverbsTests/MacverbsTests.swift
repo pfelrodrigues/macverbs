@@ -2226,6 +2226,8 @@ private func utcDate(
     #expect(mailHelp.contains("archive"))
     #expect(mailHelp.contains("delete"))
     #expect(mailHelp.contains("attachments"))
+    #expect(mailHelp.contains("draft"))
+    #expect(mailHelp.contains("compose"))
 }
 
 // MARK: - Mail list + read (T15)
@@ -3025,6 +3027,408 @@ private func utcDate(
         #expect(code == ExitCodes.usage)
         let _outEmpty = try pipes.readOutput()
         #expect(_outEmpty.isEmpty)
+    }
+}
+
+// MARK: - Mail draft + compose (T18)
+
+@Test func mailScriptsAsMultilineAndAddressList() {
+    #expect(MailScripts.asMultiline("linha1\nlinha2") == #""linha1" & return & "linha2""#)
+    #expect(MailScripts.asMultiline(#"a"b"#) == #""a\"b""#)
+    #expect(MailScripts.addressList([]) == "{}")
+    #expect(MailScripts.addressList(["a@x", #"b"c"#]) == #"{"a@x", "b\"c"}"#)
+}
+
+@Test func mailScriptsDraftReplyWithoutOpeningWindow() {
+    let s = MailScripts.draftReply(
+        messageID: "abc@x",
+        body: "linha1\nlinha2",
+        account: "Work"
+    )
+    #expect(s.contains("tell application \"Mail\""))
+    #expect(s.contains("reply msg without opening window"))
+    #expect(s.contains(#""linha1" & return & "linha2""#))
+    #expect(s.contains(#"message id is "abc@x""#))
+    #expect(s.contains(#"(name of acct) is "Work""#))
+    #expect(s.contains("INBOX"))
+    #expect(s.contains("[Gmail]/All Mail"))
+    #expect(s.contains("return \"__NOTFOUND__\""))
+    #expect(s.contains("save newMsg"))
+    #expect(!s.contains("make new attachment"))
+    #expect(!s.contains("send "))
+    #expect(!s.contains(" with opening window"))
+}
+
+@Test func mailScriptsDraftReplyWithAttachmentsDelays() {
+    let s = MailScripts.draftReply(
+        messageID: "abc@x",
+        body: "oi",
+        account: "",
+        attachments: ["/tmp/a.pdf", "/tmp/b.txt"]
+    )
+    #expect(s.components(separatedBy: "make new attachment").count - 1 == 2)
+    #expect(s.contains(#"POSIX file "/tmp/a.pdf""#))
+    #expect(s.contains(#"POSIX file "/tmp/b.txt""#))
+    #expect(s.contains("at after the last paragraph"))
+    #expect(s.components(separatedBy: "delay 1").count - 1 == 2)
+    #expect(s.contains("tell content of newMsg"))
+    #expect(s.contains("reply msg without opening window"))
+}
+
+@Test func mailScriptsComposeNewDraftNeverSends() {
+    let s = MailScripts.compose(
+        subject: "Assunto",
+        body: "linha1\nlinha2",
+        to: ["a@x"],
+        cc: ["b@x"],
+        account: "Work"
+    )
+    #expect(s.contains(#"subject:"Assunto""#))
+    #expect(s.contains(#""linha1" & return & "linha2""#))
+    #expect(s.contains(#"name of acct is "Work""#))
+    #expect(s.contains(#"{"a@x"}"#))
+    #expect(s.contains(#"{"b@x"}"#))
+    #expect(s.contains("visible:true"))
+    #expect(s.contains("save newMsg"))
+    #expect(s.contains("return \"OK\""))
+    #expect(!s.contains("send "))
+}
+
+@Test func mailScriptsComposeNoRecipientsNoAccount() {
+    let s = MailScripts.compose(subject: "S", body: "b", to: [])
+    #expect(s.contains(#"if "" is not """#))
+    #expect(s.contains("to recipients"))
+    #expect(s.contains("cc recipients"))
+}
+
+@Test func mailDraftParsesOkStatus() throws {
+    let r = try Mail.draft(
+        messageID: "msg1",
+        body: "oi",
+        runner: MockScriptRunner(stdout: "OK\n")
+    )
+    #expect(
+        r
+            == MailDraftResult(
+                messageID: "msg1",
+                status: "OK",
+                attachments: []
+            )
+    )
+}
+
+@Test func mailDraftWithAttachmentsReturnsPaths() throws {
+    let r = try Mail.draft(
+        messageID: "msg1",
+        body: "oi",
+        attachments: ["/tmp/a.pdf"],
+        runner: MockScriptRunner(stdout: "OK")
+    )
+    #expect(r.attachments == ["/tmp/a.pdf"])
+    #expect(r.status == "OK")
+}
+
+@Test func mailDraftNotFoundIsDomainError() {
+    do {
+        _ = try Mail.draft(
+            messageID: "ghost",
+            body: "oi",
+            runner: MockScriptRunner(stdout: "__NOTFOUND__")
+        )
+        Issue.record("expected domain error for missing message")
+    } catch let error as MacverbsError {
+        #expect(error == .domain("message ghost not found"))
+    } catch {
+        Issue.record("unexpected error: \(error)")
+    }
+}
+
+@Test func mailComposeReturnsSubjectAndRecipients() throws {
+    let r = try Mail.compose(
+        subject: "S",
+        body: "b",
+        to: ["a@x"],
+        cc: ["c@x"],
+        account: "Work",
+        runner: MockScriptRunner(stdout: "OK")
+    )
+    #expect(r == MailComposeResult(subject: "S", to: ["a@x"], cc: ["c@x"]))
+}
+
+@Test func mailComposeWithoutCc() throws {
+    let r = try Mail.compose(
+        subject: "S",
+        body: "b",
+        to: ["a@x"],
+        runner: MockScriptRunner(stdout: "OK")
+    )
+    #expect(r.cc.isEmpty)
+    #expect(r.to == ["a@x"])
+}
+
+@Test func mailFormatDraftAndComposeText() {
+    #expect(
+        Mail.formatDraft(
+            MailDraftResult(messageID: "abc", status: "OK", attachments: [])
+        ) == "draft created (reply to abc), not sent."
+    )
+    #expect(
+        Mail.formatCompose(
+            MailComposeResult(subject: "Assunto", to: ["a@x"], cc: ["c@x"])
+        ) == "new draft created, not sent. Subject: Assunto | To: a@x, cc: c@x"
+    )
+    #expect(
+        Mail.formatCompose(
+            MailComposeResult(subject: "S", to: ["a@x"], cc: [])
+        ) == "new draft created, not sent. Subject: S | To: a@x"
+    )
+}
+
+@Test func mailDraftCommandJsonOnStdout() throws {
+    try withRedirectedStdio { pipes in
+        let bodyURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("macverbs-draft-body-\(UUID().uuidString).txt")
+        try "hello body".write(to: bodyURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: bodyURL) }
+
+        BackendClients.scriptRunner = MockScriptRunner(stdout: "OK")
+        defer { BackendClients.resetDefaults() }
+        let code = MacverbsApp.run(
+            arguments: [
+                "--json", "mail", "draft", "<msg1@x>",
+                "--body-file", bodyURL.path,
+            ]
+        )
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        let obj = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any]
+        #expect(obj?["message_id"] as? String == "<msg1@x>")
+        #expect(obj?["status"] as? String == "OK")
+        let atts = obj?["attachments"] as? [String]
+        #expect(atts == [])
+        // Sorted keys: attachments, message_id, status
+        if let aRange = text.range(of: "\"attachments\""),
+            let mRange = text.range(of: "\"message_id\""),
+            let sRange = text.range(of: "\"status\"")
+        {
+            #expect(aRange.lowerBound < mRange.lowerBound)
+            #expect(mRange.lowerBound < sRange.lowerBound)
+        } else {
+            Issue.record("expected draft JSON keys")
+        }
+        let _errEmpty = try pipes.readError()
+        #expect(_errEmpty.isEmpty)
+    }
+}
+
+@Test func mailDraftCommandTextWithAttach() throws {
+    try withRedirectedStdio { pipes in
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("macverbs-draft-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let bodyURL = tmp.appendingPathComponent("body.txt")
+        let attURL = tmp.appendingPathComponent("anexo.pdf")
+        try "oi".write(to: bodyURL, atomically: true, encoding: .utf8)
+        try Data("x".utf8).write(to: attURL)
+
+        let recorder = RecordingOsascriptProcess()
+        recorder.result = OsascriptProcessResult(exitStatus: 0, stdout: "OK", stderr: "")
+        BackendClients.scriptRunner = OSAScriptRunner(process: recorder)
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(
+            arguments: [
+                "mail", "draft", "abc",
+                "--body-file", bodyURL.path,
+                "--attach", attURL.path,
+            ]
+        )
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        #expect(text.contains("draft created (reply to abc), not sent."))
+        #expect(recorder.scripts.count == 1)
+        let s = recorder.scripts[0]
+        #expect(s.contains("make new attachment"))
+        #expect(s.contains("delay 1"))
+        #expect(s.contains("reply msg without opening window"))
+        #expect(s.contains(#"POSIX file "\(attURL.path)""#) || s.contains(attURL.path))
+        let _errEmpty = try pipes.readError()
+        #expect(_errEmpty.isEmpty)
+    }
+}
+
+@Test func mailDraftAttachNotFoundExit1() throws {
+    try withRedirectedStdio { pipes in
+        let bodyURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("macverbs-draft-body-\(UUID().uuidString).txt")
+        try "oi".write(to: bodyURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: bodyURL) }
+
+        let code = MacverbsApp.run(
+            arguments: [
+                "mail", "draft", "abc",
+                "--body-file", bodyURL.path,
+                "--attach", "/tmp/nao-existe-macverbs-xyz.pdf",
+            ]
+        )
+        #expect(code == ExitCodes.domain)
+        let err = try pipes.readError()
+        #expect(err.contains("attachment(s) not found"))
+        let _outEmpty = try pipes.readOutput()
+        #expect(_outEmpty.isEmpty)
+    }
+}
+
+@Test func mailDraftMissingBodyFileExit1() throws {
+    try withRedirectedStdio { pipes in
+        let code = MacverbsApp.run(
+            arguments: [
+                "mail", "draft", "abc",
+                "--body-file", "/tmp/does-not-exist-macverbs-xyz.txt",
+            ]
+        )
+        #expect(code == ExitCodes.domain)
+        let err = try pipes.readError()
+        #expect(err.contains("could not read --body-file"))
+        let _outEmpty = try pipes.readOutput()
+        #expect(_outEmpty.isEmpty)
+    }
+}
+
+@Test func mailDraftRequiresBodyFileUsageExit64() throws {
+    try withRedirectedStdio { pipes in
+        let code = MacverbsApp.run(arguments: ["mail", "draft", "abc"])
+        #expect(code == ExitCodes.usage)
+        let _outEmpty = try pipes.readOutput()
+        #expect(_outEmpty.isEmpty)
+    }
+}
+
+@Test func mailDraftNotFoundExit1() throws {
+    try withRedirectedStdio { pipes in
+        let bodyURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("macverbs-draft-body-\(UUID().uuidString).txt")
+        try "oi".write(to: bodyURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: bodyURL) }
+
+        BackendClients.scriptRunner = MockScriptRunner(stdout: "__NOTFOUND__")
+        defer { BackendClients.resetDefaults() }
+        let code = MacverbsApp.run(
+            arguments: ["mail", "draft", "ghost", "--body-file", bodyURL.path]
+        )
+        #expect(code == ExitCodes.domain)
+        let err = try pipes.readError()
+        #expect(err.contains("error: message ghost not found"))
+        let _outEmpty = try pipes.readOutput()
+        #expect(_outEmpty.isEmpty)
+    }
+}
+
+@Test func mailComposeCommandJsonOnStdout() throws {
+    try withRedirectedStdio { pipes in
+        let bodyURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("macverbs-compose-body-\(UUID().uuidString).txt")
+        try "oi".write(to: bodyURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: bodyURL) }
+
+        BackendClients.scriptRunner = MockScriptRunner(stdout: "OK")
+        defer { BackendClients.resetDefaults() }
+        let code = MacverbsApp.run(
+            arguments: [
+                "--json", "mail", "compose",
+                "--subject", "Assunto",
+                "--body-file", bodyURL.path,
+                "--to", "a@x",
+                "--cc", "c@x",
+            ]
+        )
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        let obj = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any]
+        #expect(obj?["subject"] as? String == "Assunto")
+        #expect(obj?["to"] as? [String] == ["a@x"])
+        #expect(obj?["cc"] as? [String] == ["c@x"])
+        // Sorted keys: cc, subject, to
+        if let ccRange = text.range(of: "\"cc\""),
+            let subRange = text.range(of: "\"subject\""),
+            let toRange = text.range(of: "\"to\"")
+        {
+            #expect(ccRange.lowerBound < subRange.lowerBound)
+            #expect(subRange.lowerBound < toRange.lowerBound)
+        } else {
+            Issue.record("expected compose JSON keys")
+        }
+        let _errEmpty = try pipes.readError()
+        #expect(_errEmpty.isEmpty)
+    }
+}
+
+@Test func mailComposeCommandTextOnStdout() throws {
+    try withRedirectedStdio { pipes in
+        let bodyURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("macverbs-compose-body-\(UUID().uuidString).txt")
+        try "oi".write(to: bodyURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: bodyURL) }
+
+        let recorder = RecordingOsascriptProcess()
+        recorder.result = OsascriptProcessResult(exitStatus: 0, stdout: "OK", stderr: "")
+        BackendClients.scriptRunner = OSAScriptRunner(process: recorder)
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(
+            arguments: [
+                "mail", "compose",
+                "--subject", "Assunto",
+                "--body-file", bodyURL.path,
+                "--to", "a@x",
+                "--cc", "c@x",
+            ]
+        )
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        #expect(
+            text.contains("Assunto: Assunto | To: a@x, cc: c@x")
+                || text.contains("Subject: Assunto | To: a@x, cc: c@x")
+        )
+        #expect(recorder.scripts.count == 1)
+        let s = recorder.scripts[0]
+        #expect(s.contains("save newMsg"))
+        #expect(!s.contains("send "))
+        let _errEmpty = try pipes.readError()
+        #expect(_errEmpty.isEmpty)
+    }
+}
+
+@Test func mailComposeMissingBodyFileExit1() throws {
+    try withRedirectedStdio { pipes in
+        let code = MacverbsApp.run(
+            arguments: [
+                "mail", "compose",
+                "--subject", "S",
+                "--body-file", "/tmp/does-not-exist-macverbs-xyz.txt",
+            ]
+        )
+        #expect(code == ExitCodes.domain)
+        let err = try pipes.readError()
+        #expect(err.contains("could not read --body-file"))
+        let _outEmpty = try pipes.readOutput()
+        #expect(_outEmpty.isEmpty)
+    }
+}
+
+@Test func mailComposeRequiresSubjectAndBodyFileUsageExit64() throws {
+    try withRedirectedStdio { pipes in
+        let code1 = MacverbsApp.run(
+            arguments: ["mail", "compose", "--body-file", "x"]
+        )
+        #expect(code1 == ExitCodes.usage)
+        let code2 = MacverbsApp.run(
+            arguments: ["mail", "compose", "--subject", "S"]
+        )
+        #expect(code2 == ExitCodes.usage)
+        let _ = try pipes.readOutput()
+        let _ = try pipes.readError()
     }
 }
 
