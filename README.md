@@ -2,9 +2,9 @@
 
 Agent-first CLI for **macOS Mail, Reminders, Notes, and Calendar**.
 
-Stable JSON verbs for coding agents and shell scripts. Built to be dogfooded daily; distributed via Homebrew (personal tap first, homebrew-core later).
+Stable JSON verbs for coding agents and shell scripts. Distributed via Homebrew (personal tap first; homebrew-core later).
 
-> **Status:** public scaffold + roadmap. Implementation in progress (Swift rewrite). Not installable yet.
+> **Status:** under active development. Not installable via Homebrew yet.
 
 ## Goals
 
@@ -66,17 +66,7 @@ Agent instructions: **[AGENTS.md](AGENTS.md)**. Task loop: `docs/ROADMAP.md` + w
 | **CI** | push/PR → `main` | **Linux** | `swift format lint` only (cheap) |
 | **macOS check** | **manual** (`workflow_dispatch`) | macOS | format + `swift build` + `swift test` |
 
-Real gate for agents and day-to-day: **`mise run check` on a Mac** (EventKit/osascript are not validated on Linux).  
-Trigger macOS CI: GitHub → Actions → **macOS check** → Run workflow.
-
-## Not this project
-
-- Not affiliated with Apple Inc.
-- Not a deep Reminders power-user clone (e.g. RemCTL feature parity)
-- Not Microsoft Graph / WhatsApp / third-party SaaS wrappers
-- Not a GUI
-
-Related but different: [macos-verbs](https://github.com/chaoz23/macos-verbs) targets system actions (app focus, clipboard, volume). **macverbs** targets Mail, Reminders, Notes, and Calendar.
+Default PR gate: Linux format only. Full build/test: run **`mise run check` on a Mac**, or trigger **macOS check** manually (Actions → Run workflow).
 
 ## Install
 
@@ -90,3 +80,5 @@ brew install pfelrodrigues/tap/macverbs
 ## License
 
 [MIT](LICENSE) © Paulo Rodrigues
+
+macverbs is not affiliated with Apple Inc. “Mail”, “Reminders”, “Notes”, and “Calendar” are Apple product names.
