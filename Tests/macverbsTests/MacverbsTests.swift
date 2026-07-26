@@ -243,6 +243,130 @@ struct MockScriptRunner: ScriptRunner {
     #expect(try BackendClients.scriptRunner.run(script: "x", timeout: 1) == "ok")
 }
 
+// MARK: - Config / paths
+
+@Test func configDirectoryDefaultsUnderHome() {
+    let home = URL(fileURLWithPath: "/Users/fixture", isDirectory: true)
+    let dir = ConfigPaths.configDirectory(environment: [:], homeDirectory: home)
+    #expect(dir.path == "/Users/fixture/.config/macverbs")
+}
+
+@Test func configDirectoryHonorsEnvOverride() {
+    let home = URL(fileURLWithPath: "/Users/fixture", isDirectory: true)
+    let dir = ConfigPaths.configDirectory(
+        environment: [ConfigPaths.envConfigDir: "/tmp/mv-config"],
+        homeDirectory: home
+    )
+    #expect(dir.path == "/tmp/mv-config")
+}
+
+@Test func configDirectoryExpandsTildeInEnv() {
+    let home = URL(fileURLWithPath: "/Users/fixture", isDirectory: true)
+    let dir = ConfigPaths.configDirectory(
+        environment: [ConfigPaths.envConfigDir: "~/.config/macverbs"],
+        homeDirectory: home
+    )
+    #expect(dir.path == "/Users/fixture/.config/macverbs")
+}
+
+@Test func configDirectoryIgnoresBlankEnv() {
+    let home = URL(fileURLWithPath: "/Users/fixture", isDirectory: true)
+    let dir = ConfigPaths.configDirectory(
+        environment: [ConfigPaths.envConfigDir: "   "],
+        homeDirectory: home
+    )
+    #expect(dir.path == "/Users/fixture/.config/macverbs")
+}
+
+@Test func calendarsURLAppendsFilename() {
+    let home = URL(fileURLWithPath: "/Users/fixture", isDirectory: true)
+    let url = ConfigPaths.calendarsURL(environment: [:], homeDirectory: home)
+    #expect(url.lastPathComponent == ConfigPaths.calendarsFileName)
+    #expect(url.path.hasSuffix("/.config/macverbs/calendars.json"))
+}
+
+@Test func loadCalendarAliasesMissingFileIsEmpty() {
+    let url = URL(fileURLWithPath: "/tmp/macverbs-no-such-calendars-\(UUID().uuidString).json")
+    let aliases = Config.loadCalendarAliases(from: url)
+    #expect(aliases == .empty)
+    #expect(aliases.labelsByUID.isEmpty)
+}
+
+@Test func loadCalendarAliasesValidMap() throws {
+    let dir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("macverbs-config-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    let url = dir.appendingPathComponent("calendars.json")
+    let json = """
+        {
+          "UID-WORK": "Work",
+          "UID-PERSONAL": "Personal",
+          "UID-ACME": "Acme"
+        }
+        """
+    try json.write(to: url, atomically: true, encoding: .utf8)
+
+    let aliases = Config.loadCalendarAliases(from: url)
+    #expect(aliases.labelsByUID["UID-WORK"] == "Work")
+    #expect(aliases.labelsByUID["UID-PERSONAL"] == "Personal")
+    #expect(aliases.labelsByUID["UID-ACME"] == "Acme")
+    #expect(aliases.label(forUID: "UID-WORK", fallback: "Calendário") == "Work")
+    #expect(aliases.label(forUID: "unknown", fallback: "Calendário") == "Calendário")
+}
+
+@Test func loadCalendarAliasesInvalidJSONIsEmpty() throws {
+    let dir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("macverbs-config-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    let url = dir.appendingPathComponent("calendars.json")
+    try "{not valid json".write(to: url, atomically: true, encoding: .utf8)
+
+    #expect(Config.loadCalendarAliases(from: url) == .empty)
+}
+
+@Test func loadCalendarAliasesNonObjectRootIsEmpty() throws {
+    #expect(Config.decodeCalendarAliases(from: Data("[]".utf8)) == .empty)
+    #expect(Config.decodeCalendarAliases(from: Data("\"x\"".utf8)) == .empty)
+    #expect(Config.decodeCalendarAliases(from: Data("1".utf8)) == .empty)
+}
+
+@Test func loadCalendarAliasesSkipsNonStringValues() throws {
+    let data = Data(
+        """
+        {"UID-OK": "Work", "UID-BAD": 42, "UID-NULL": null}
+        """
+        .utf8
+    )
+    let aliases = Config.decodeCalendarAliases(from: data)
+    #expect(aliases.labelsByUID == ["UID-OK": "Work"])
+}
+
+@Test func exampleCalendarsJSONUsesFixtureLabelsOnly() throws {
+    // Repo example must not ship personal account names (Vert, PYO, …).
+    let root = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()  // Tests/macverbsTests
+        .deletingLastPathComponent()  // Tests
+        .deletingLastPathComponent()  // repo root
+    let example = root.appendingPathComponent("calendars.example.json")
+    #expect(FileManager.default.fileExists(atPath: example.path))
+
+    let data = try Data(contentsOf: example)
+    let aliases = Config.decodeCalendarAliases(from: data)
+    #expect(!aliases.labelsByUID.isEmpty)
+    let labels = Set(aliases.labelsByUID.values)
+    #expect(labels.isSubset(of: ["Work", "Personal", "Acme"]))
+    let forbidden = ["Vert", "PYO", "Evertec"]
+    for name in forbidden {
+        #expect(!labels.contains(name))
+        let text = String(data: data, encoding: .utf8) ?? ""
+        #expect(!text.contains(name))
+    }
+}
+
 // MARK: - doctor
 
 @Test func doctorProbeWithStubsListsMissing() {
