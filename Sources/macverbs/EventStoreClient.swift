@@ -162,6 +162,21 @@ protocol EventStoreClient: Sendable {
     ///
     /// - Throws: `MacverbsError.domain` when a named list is missing.
     func incompleteReminders(listName: String?) throws -> [ReminderItem]
+
+    /// Create an incomplete reminder (oracle `reminder_add`).
+    func addReminder(
+        title: String,
+        listName: String?,
+        due: String,
+        notes: String,
+        priority: String
+    ) throws -> ReminderCreated
+
+    /// Complete first incomplete title match (optional list).
+    func completeReminder(title: String, listName: String?) throws -> ReminderDoneResult
+
+    /// Delete first incomplete title match (optional list).
+    func deleteReminder(title: String, listName: String?) throws -> ReminderDeleted
 }
 
 extension EventStoreClient {
@@ -215,6 +230,18 @@ protocol EventKitBacking: Sendable {
 
     /// Incomplete reminders. `listName` nil → all; else exact title match.
     func incompleteReminders(listName: String?) throws -> [ReminderItem]
+
+    func addReminder(
+        title: String,
+        listName: String?,
+        due: String,
+        notes: String,
+        priority: String
+    ) throws -> ReminderCreated
+
+    func completeReminder(title: String, listName: String?) throws -> ReminderDoneResult
+
+    func deleteReminder(title: String, listName: String?) throws -> ReminderDeleted
 }
 
 // MARK: - Live EKEventStore
@@ -331,6 +358,31 @@ final class LiveEventKitBacking: EventKitBacking, @unchecked Sendable {
         try LiveRemindersQuery.incomplete(store: store, listName: listName)
     }
 
+    func addReminder(
+        title: String,
+        listName: String?,
+        due: String,
+        notes: String,
+        priority: String
+    ) throws -> ReminderCreated {
+        try LiveRemindersQuery.add(
+            store: store,
+            title: title,
+            listName: listName,
+            due: due,
+            notes: notes,
+            priority: priority
+        )
+    }
+
+    func completeReminder(title: String, listName: String?) throws -> ReminderDoneResult {
+        try LiveRemindersQuery.complete(store: store, title: title, listName: listName)
+    }
+
+    func deleteReminder(title: String, listName: String?) throws -> ReminderDeleted {
+        try LiveRemindersQuery.delete(store: store, title: title, listName: listName)
+    }
+
     /// Mutable result carrier for EventKit completion handlers (sync bridge).
     private final class RequestBox: @unchecked Sendable {
         var granted = false
@@ -430,6 +482,30 @@ struct EKEventStoreClient: EventStoreClient {
     func incompleteReminders(listName: String?) throws -> [ReminderItem] {
         try backing.incompleteReminders(listName: listName)
     }
+
+    func addReminder(
+        title: String,
+        listName: String?,
+        due: String,
+        notes: String,
+        priority: String
+    ) throws -> ReminderCreated {
+        try backing.addReminder(
+            title: title,
+            listName: listName,
+            due: due,
+            notes: notes,
+            priority: priority
+        )
+    }
+
+    func completeReminder(title: String, listName: String?) throws -> ReminderDoneResult {
+        try backing.completeReminder(title: title, listName: listName)
+    }
+
+    func deleteReminder(title: String, listName: String?) throws -> ReminderDeleted {
+        try backing.deleteReminder(title: title, listName: listName)
+    }
 }
 
 // MARK: - Stub (no EventKit / no TCC)
@@ -479,6 +555,30 @@ struct StubEventStoreClient: EventStoreClient {
     }
 
     func incompleteReminders(listName: String?) throws -> [ReminderItem] {
+        throw MacverbsError.system(
+            "EventKit client not wired (Calendar, Reminders; see T06)"
+        )
+    }
+
+    func addReminder(
+        title: String,
+        listName: String?,
+        due: String,
+        notes: String,
+        priority: String
+    ) throws -> ReminderCreated {
+        throw MacverbsError.system(
+            "EventKit client not wired (Calendar, Reminders; see T06)"
+        )
+    }
+
+    func completeReminder(title: String, listName: String?) throws -> ReminderDoneResult {
+        throw MacverbsError.system(
+            "EventKit client not wired (Calendar, Reminders; see T06)"
+        )
+    }
+
+    func deleteReminder(title: String, listName: String?) throws -> ReminderDeleted {
         throw MacverbsError.system(
             "EventKit client not wired (Calendar, Reminders; see T06)"
         )

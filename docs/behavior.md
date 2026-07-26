@@ -42,12 +42,12 @@ Help (`-h` / `--help`) and `--version` write to stdout and exit 0. Usage failure
 |------|----------------|--------|
 | lists | | **done** (T09) |
 | list | `--list` (optional; empty = all lists) | **done** (T09) |
-| add | `title`, `--list` `--due` `--notes` `--priority high\|medium\|low` | planned |
-| done | `title`, `--list` | planned |
+| add | `title`, `--list` `--due` `--notes` `--priority high\|medium\|low` | **done** (T10) |
+| done | `title`, `--list` | **done** (T10) |
 | move | `title`, `--from` (required) `--to` (required) | planned |
 | edit | `title`, `--list` `--due` `--priority high\|medium\|low\|none` `--notes` | planned |
 | mklist | `name` (idempotent: ensure list exists) | planned |
-| delete | `title`, `--list` (delete without completing) | planned |
+| delete | `title`, `--list` (delete without completing) | **done** (T10) |
 
 #### reminders lists / list (T09)
 
@@ -81,6 +81,42 @@ keys). Text: `- title | list: … | due: … | priority: … | notes: …`.
     "title": "Standup prep"
   }
 ]
+```
+
+
+#### reminders add / done / delete (T10)
+
+EventKit mutations. Match for `done` / `delete` is **exact title** within the
+resolved list (incomplete only). Empty `--list` uses the default list for new
+reminders (oracle first/default list). Write priority map: high→1, medium→5,
+low→9. Due: `YYYY-MM-DD` or `YYYY-MM-DD HH:MM` (date-only defaults to 09:00).
+
+JSON add: `{ "created", "list" }` where `list` is the flag value, or `"(first)"`
+when `--list` was empty. Text: `created: <title>`.
+
+JSON done: `{ "done" }`. Text: `done: <title>`.
+
+JSON delete: `{ "deleted" }`. Text: `deleted: <title>`.
+
+Exit 1 when list or reminder is missing, or due/priority is invalid.
+
+```json
+{
+  "created": "Standup prep",
+  "list": "Work"
+}
+```
+
+```json
+{
+  "done": "Standup prep"
+}
+```
+
+```json
+{
+  "deleted": "Temp task"
+}
 ```
 
 ### calendar
