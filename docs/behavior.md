@@ -99,32 +99,46 @@ Date/time forms: `YYYY-MM-DD HH:MM` (oracle-compatible).
 
 Runs without EventKit permission prompts. Reports backend wiring and
 authorization status from injectable seams (`EventStoreClient`, `ScriptRunner`).
-Default production wiring: `ScriptRunner` is real osascript (T13); EventKit is
-still a stub until T06. With that mix, `ok` is false and `missing` lists EventKit
-gaps. Tests may inject `StubScriptRunner` to report Apple Events as unwired.
+Default production wiring: `EventStoreClient` is real EventKit (T06) and
+`ScriptRunner` is real osascript (T13). Doctor only reads authorization status
+(never calls `requestAccess`). When Calendar/Reminders are denied, restricted,
+or not determined, those gaps appear under `missing`. Tests may inject
+`StubEventStoreClient` / `StubScriptRunner` to report backends as unwired.
 
-JSON shape (production defaults after T13, EventKit still stub):
+JSON shape (production defaults; statuses depend on host TCC):
 
 ```json
 {
   "backends": {
     "appleEvents": { "kind": "osascript", "wired": true },
     "eventKit": {
-      "calendar": "unavailable",
-      "kind": "stub",
-      "reminders": "unavailable"
+      "calendar": "fullAccess",
+      "kind": "eventkit",
+      "reminders": "fullAccess"
     }
   },
-  "missing": [
-    "EventKit client not wired (Calendar, Reminders; see T06)"
-  ],
-  "ok": false,
+  "missing": [],
+  "ok": true,
   "version": "0.1.0"
 }
 ```
 
+When access is not yet granted, `ok` is false and `missing` lists actionable
+System Settings hints (e.g. Calendar access not determined / denied).
+
 Exit 0 when the report is produced successfully (gaps go in `missing`, not exit
 code).
+
+#### EventStoreClient (T06)
+
+- Protocol `EventStoreClient`: `authorizationStatus(for:)` (no prompt) and
+  `requestAccess(for:)` (may prompt once when not determined).
+- `ensureAccess(for:)` (protocol extension): request if needed, then throw
+  `MacverbsError.domain` with a clear System Settings path when access is
+  denied, restricted, write-only, or still not granted.
+- Production: `EKEventStoreClient` (`kind: eventkit`) wraps `EKEventStore` via
+  injectable `EventKitBacking` (live store or test double).
+- Unit tests use `MockEventStoreClient` / fake backing; never require live TCC.
 
 #### ScriptRunner (T13)
 

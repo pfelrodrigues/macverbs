@@ -21,7 +21,7 @@ struct DoctorBackends: Codable, Equatable, Sendable {
 }
 
 struct DoctorEventKitBackend: Codable, Equatable, Sendable {
-    /// Implementation identity (`stub` until T06).
+    /// Implementation identity (`eventkit` when real; `stub` in tests).
     var kind: String
     var calendar: EventAuthorizationStatus
     var reminders: EventAuthorizationStatus
@@ -128,6 +128,9 @@ enum Doctor {
     private static func eventKitKindName(_ client: any EventStoreClient) -> String {
         if client is StubEventStoreClient {
             return StubEventStoreClient.kind
+        }
+        if client is EKEventStoreClient {
+            return EKEventStoreClient.kind
         }
         return String(describing: type(of: client))
     }

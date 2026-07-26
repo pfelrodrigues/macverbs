@@ -22,6 +22,23 @@ Stable JSON verbs for coding agents and shell scripts. Built to be dogfooded dai
 
 One binary, two backends. Not EventKit-only (Mail and Notes have no public EventKit surface).
 
+## Permissions (TCC)
+
+Calendar and Reminders use **EventKit**. The first verb that needs data calls
+`requestAccess` once per entity type (Calendar events / Reminders). macOS shows
+the system prompt; afterward the choice lives under:
+
+- **System Settings → Privacy & Security → Calendars**
+- **System Settings → Privacy & Security → Reminders**
+
+`macverbs doctor` reports authorization **without** prompting. Denied or
+restricted access yields domain errors (exit 1) with the same Settings path.
+Full access is required for list/read verbs; write-only is treated as
+insufficient.
+
+Mail and Notes use **Apple Events** (Automation) when those verbs land; grant
+control for Mail / Notes when prompted.
+
 ## Develop (mise)
 
 ```bash

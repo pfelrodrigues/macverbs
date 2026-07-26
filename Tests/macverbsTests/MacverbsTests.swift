@@ -1,3 +1,4 @@
+import EventKit
 import Foundation
 import Testing
 
@@ -168,10 +169,15 @@ private struct SamplePayload: Codable, Equatable {
 
 // MARK: - Seams (EventStoreClient + ScriptRunner)
 
-/// Test double for EventKit; never links EventKit.
+/// Test double for EventKit; never links EventKit / never prompts TCC.
 struct MockEventStoreClient: EventStoreClient {
     var calendar: EventAuthorizationStatus = .notDetermined
     var reminders: EventAuthorizationStatus = .notDetermined
+    /// Returned by `requestAccess` when current status is `.notDetermined`.
+    var afterRequestCalendar: EventAuthorizationStatus = .denied
+    var afterRequestReminders: EventAuthorizationStatus = .denied
+    /// Optional system failure from `requestAccess`.
+    var requestError: Error?
 
     func authorizationStatus(for entity: EventEntityType) -> EventAuthorizationStatus {
         switch entity {
@@ -180,6 +186,58 @@ struct MockEventStoreClient: EventStoreClient {
         case .reminder:
             reminders
         }
+    }
+
+    func requestAccess(for entity: EventEntityType) throws -> EventAuthorizationStatus {
+        if let requestError {
+            throw requestError
+        }
+        let current = authorizationStatus(for: entity)
+        if current != .notDetermined {
+            return current
+        }
+        switch entity {
+        case .event:
+            return afterRequestCalendar
+        case .reminder:
+            return afterRequestReminders
+        }
+    }
+}
+
+/// Fake EventKit surface for `EKEventStoreClient` unit tests (no live store).
+final class FakeEventKitBacking: EventKitBacking, @unchecked Sendable {
+    var statuses: [EventEntityType: EventAuthorizationStatus]
+    var grantOnRequest: Bool
+    var requestError: Error?
+    private(set) var requestCalls: [EventEntityType] = []
+
+    init(
+        calendar: EventAuthorizationStatus = .notDetermined,
+        reminders: EventAuthorizationStatus = .notDetermined,
+        grantOnRequest: Bool = false,
+        requestError: Error? = nil
+    ) {
+        self.statuses = [.event: calendar, .reminder: reminders]
+        self.grantOnRequest = grantOnRequest
+        self.requestError = requestError
+    }
+
+    func authorizationStatus(for entity: EventEntityType) -> EventAuthorizationStatus {
+        statuses[entity] ?? .notDetermined
+    }
+
+    func requestFullAccess(for entity: EventEntityType) throws -> Bool {
+        requestCalls.append(entity)
+        if let requestError {
+            throw requestError
+        }
+        if grantOnRequest {
+            statuses[entity] = .fullAccess
+        } else {
+            statuses[entity] = .denied
+        }
+        return grantOnRequest
     }
 }
 
@@ -230,6 +288,194 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
     }
 }
 
+@Test func stubEventStoreRequestAccessThrowsSystem() {
+    let stub = StubEventStoreClient()
+    #expect(throws: MacverbsError.self) {
+        try stub.requestAccess(for: .event)
+    }
+    do {
+        _ = try stub.requestAccess(for: .reminder)
+        Issue.record("expected throw")
+    } catch let error as MacverbsError {
+        #expect(error == .system("EventKit client not wired (Calendar, Reminders; see T06)"))
+        #expect(error.processExitCode == ExitCodes.system)
+    } catch {
+        Issue.record("unexpected error \(error)")
+    }
+}
+
+@Test func ensureAccessThrowsDomainWhenDenied() {
+    let mock = MockEventStoreClient(calendar: .denied, reminders: .restricted)
+    do {
+        try mock.ensureAccess(for: .event)
+        Issue.record("expected throw")
+    } catch let error as MacverbsError {
+        #expect(error.processExitCode == ExitCodes.domain)
+        #expect(error.message.contains("Calendar access denied"))
+        #expect(error.message.contains("System Settings"))
+        #expect(error.message.contains("Calendars"))
+    } catch {
+        Issue.record("unexpected error \(error)")
+    }
+    do {
+        try mock.ensureAccess(for: .reminder)
+        Issue.record("expected throw")
+    } catch let error as MacverbsError {
+        #expect(error.message.contains("Reminders access restricted"))
+        #expect(error.message.contains("Reminders"))
+    } catch {
+        Issue.record("unexpected error \(error)")
+    }
+}
+
+@Test func ensureAccessThrowsDomainWhenWriteOnly() {
+    let mock = MockEventStoreClient(calendar: .writeOnly, reminders: .writeOnly)
+    do {
+        try mock.ensureAccess(for: .event)
+        Issue.record("expected throw")
+    } catch let error as MacverbsError {
+        #expect(error == .domain(EventStoreAccess.errorMessage(for: .event, status: .writeOnly)))
+        #expect(error.message.contains("write-only"))
+    } catch {
+        Issue.record("unexpected error \(error)")
+    }
+}
+
+@Test func ensureAccessSucceedsWithFullAccess() throws {
+    let mock = MockEventStoreClient(calendar: .fullAccess, reminders: .authorized)
+    try mock.ensureAccess(for: .event)
+    try mock.ensureAccess(for: .reminder)
+}
+
+@Test func ensureAccessRequestsWhenNotDeterminedThenDenies() {
+    let mock = MockEventStoreClient(
+        calendar: .notDetermined,
+        reminders: .notDetermined,
+        afterRequestCalendar: .denied,
+        afterRequestReminders: .denied
+    )
+    do {
+        try mock.ensureAccess(for: .event)
+        Issue.record("expected throw")
+    } catch let error as MacverbsError {
+        #expect(error.processExitCode == ExitCodes.domain)
+        #expect(error.message.contains("Calendar access denied"))
+    } catch {
+        Issue.record("unexpected error \(error)")
+    }
+}
+
+@Test func ensureAccessRequestsWhenNotDeterminedThenGrants() throws {
+    let mock = MockEventStoreClient(
+        calendar: .notDetermined,
+        reminders: .notDetermined,
+        afterRequestCalendar: .fullAccess,
+        afterRequestReminders: .fullAccess
+    )
+    try mock.ensureAccess(for: .event)
+    try mock.ensureAccess(for: .reminder)
+}
+
+@Test func eventStoreAccessErrorMessagesAreActionable() {
+    let denied = EventStoreAccess.errorMessage(for: .event, status: .denied)
+    #expect(denied.contains("Calendar access denied"))
+    #expect(denied.contains("System Settings → Privacy & Security → Calendars"))
+
+    let restricted = EventStoreAccess.errorMessage(for: .reminder, status: .restricted)
+    #expect(restricted.contains("Reminders access restricted"))
+    #expect(restricted.contains("Privacy & Security → Reminders"))
+}
+
+@Test func ekEventStoreClientMapsViaFakeBacking() throws {
+    let fake = FakeEventKitBacking(calendar: .fullAccess, reminders: .denied)
+    let client = EKEventStoreClient(backing: fake)
+    #expect(client.authorizationStatus(for: .event) == .fullAccess)
+    #expect(client.authorizationStatus(for: .reminder) == .denied)
+    #expect(client.eventStore == nil)
+
+    // Already determined: requestAccess does not call backing request.
+    #expect(try client.requestAccess(for: .event) == .fullAccess)
+    #expect(fake.requestCalls.isEmpty)
+
+    do {
+        try client.ensureAccess(for: .reminder)
+        Issue.record("expected throw")
+    } catch let error as MacverbsError {
+        #expect(error.message.contains("Reminders access denied"))
+    } catch {
+        Issue.record("unexpected error \(error)")
+    }
+}
+
+@Test func ekEventStoreClientRequestAccessPromptsOnce() throws {
+    let fake = FakeEventKitBacking(
+        calendar: .notDetermined,
+        reminders: .notDetermined,
+        grantOnRequest: true
+    )
+    let client = EKEventStoreClient(backing: fake)
+    #expect(try client.requestAccess(for: .event) == .fullAccess)
+    #expect(fake.requestCalls == [.event])
+    #expect(client.authorizationStatus(for: .event) == .fullAccess)
+
+    // Second call: already determined, no second prompt.
+    #expect(try client.requestAccess(for: .event) == .fullAccess)
+    #expect(fake.requestCalls == [.event])
+}
+
+@Test func ekEventStoreClientRequestAccessPropagatesSystemError() {
+    let fake = FakeEventKitBacking(
+        calendar: .notDetermined,
+        requestError: MacverbsError.system("EventKit access request failed: boom")
+    )
+    let client = EKEventStoreClient(backing: fake)
+    do {
+        _ = try client.requestAccess(for: .event)
+        Issue.record("expected throw")
+    } catch let error as MacverbsError {
+        #expect(error == .system("EventKit access request failed: boom"))
+        #expect(error.processExitCode == ExitCodes.system)
+    } catch {
+        Issue.record("unexpected error \(error)")
+    }
+}
+
+@Test func liveEventKitBackingMapsAuthorizationStatuses() {
+    #expect(LiveEventKitBacking.map(.notDetermined) == .notDetermined)
+    #expect(LiveEventKitBacking.map(.restricted) == .restricted)
+    #expect(LiveEventKitBacking.map(.denied) == .denied)
+    #expect(LiveEventKitBacking.map(.fullAccess) == .fullAccess)
+    #expect(LiveEventKitBacking.map(.writeOnly) == .writeOnly)
+}
+
+@Test func doctorReportsEventKitKindWhenWired() {
+    let report = Doctor.probe(
+        eventStore: EKEventStoreClient(
+            backing: FakeEventKitBacking(calendar: .fullAccess, reminders: .fullAccess)
+        ),
+        scriptRunner: MockScriptRunner(),
+        version: "0.1.0"
+    )
+    #expect(report.backends.eventKit.kind == EKEventStoreClient.kind)
+    #expect(report.backends.eventKit.calendar == .fullAccess)
+    #expect(report.backends.eventKit.reminders == .fullAccess)
+    #expect(report.ok == true)
+    #expect(report.missing.isEmpty)
+}
+
+@Test func domainErrorThroughAppForDeniedCalendar() throws {
+    try withRedirectedStdio { pipes in
+        let code = MacverbsApp.runCatching {
+            try MockEventStoreClient(calendar: .denied).ensureAccess(for: .event)
+        }
+        #expect(code == ExitCodes.domain)
+        let err = try pipes.readError()
+        #expect(err.contains("error: Calendar access denied"))
+        #expect(err.contains("System Settings"))
+        #expect(try pipes.readOutput().isEmpty)
+    }
+}
+
 @Test func mockScriptRunnerReturnsCannedOutput() throws {
     let mock = MockScriptRunner(stdout: "Work\(UnicodeScalar(0x1F)!)")
     #expect(try mock.run(script: "return 1", timeout: 1) == "Work\u{1F}")
@@ -242,26 +488,31 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
     }
 }
 
-@Test func backendClientsDefaultsWireOsascriptRunner() {
-    BackendClients.resetDefaults()
-    #expect(BackendClients.eventStore is StubEventStoreClient)
-    #expect(BackendClients.scriptRunner is OSAScriptRunner)
+@Test func backendClientsDefaultsWireEventKitAndOsascript() throws {
+    try withBackendClientsLock {
+        BackendClients.resetDefaults()
+        #expect(BackendClients.eventStore is EKEventStoreClient)
+        #expect(BackendClients.scriptRunner is OSAScriptRunner)
+    }
 }
 
 @Test func backendClientsAcceptMocks() throws {
-    BackendClients.resetDefaults()
-    defer { BackendClients.resetDefaults() }
+    try withBackendClientsLock {
+        BackendClients.resetDefaults()
+        defer { BackendClients.resetDefaults() }
 
-    BackendClients.eventStore = MockEventStoreClient(
-        calendar: .fullAccess,
-        reminders: .fullAccess
-    )
-    BackendClients.scriptRunner = MockScriptRunner(stdout: "ok")
+        BackendClients.eventStore = MockEventStoreClient(
+            calendar: .fullAccess,
+            reminders: .fullAccess
+        )
+        BackendClients.scriptRunner = MockScriptRunner(stdout: "ok")
 
-    #expect(
-        BackendClients.eventStore.authorizationStatus(for: .event) == .fullAccess
-    )
-    #expect(try BackendClients.scriptRunner.run(script: "x", timeout: 1) == "ok")
+        #expect(
+            BackendClients.eventStore.authorizationStatus(for: .event) == .fullAccess
+        )
+        let out = try BackendClients.scriptRunner.run(script: "x", timeout: 1)
+        #expect(out == "ok")
+    }
 }
 
 // MARK: - AppleScript escape + parseRecords (oracle parity)
@@ -564,7 +815,15 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
 
 @Test func doctorCommandJsonOnStdout() throws {
     try withRedirectedStdio { pipes in
-        BackendClients.resetDefaults()
+        // Inject mocks so host TCC does not make this test flaky.
+        // Holds BackendClients lock via withRedirectedStdio (shared global lock).
+        BackendClients.eventStore = MockEventStoreClient(
+            calendar: .notDetermined,
+            reminders: .notDetermined
+        )
+        BackendClients.scriptRunner = OSAScriptRunner(process: RecordingOsascriptProcess())
+        defer { BackendClients.resetDefaults() }
+
         let code = MacverbsApp.run(arguments: ["--json", "doctor"])
         #expect(code == ExitCodes.success)
         let text = try pipes.readOutput()
@@ -574,8 +833,10 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
         #expect(obj?["version"] as? String == Version.current)
         let missing = obj?["missing"] as? [String]
         #expect(missing?.isEmpty == false)
-        #expect(missing?.contains { $0.contains("EventKit") } == true)
+        #expect(missing?.contains { $0.contains("Calendar") } == true)
         let backends = obj?["backends"] as? [String: Any]
+        let eventKit = backends?["eventKit"] as? [String: Any]
+        #expect(eventKit?["calendar"] as? String == "notDetermined")
         let appleEvents = backends?["appleEvents"] as? [String: Any]
         #expect(appleEvents?["kind"] as? String == OSAScriptRunner.kind)
         #expect(appleEvents?["wired"] as? Bool == true)
@@ -585,12 +846,40 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
 
 @Test func doctorCommandTextOnStdout() throws {
     try withRedirectedStdio { pipes in
-        BackendClients.resetDefaults()
+        BackendClients.eventStore = MockEventStoreClient(
+            calendar: .denied,
+            reminders: .denied
+        )
+        BackendClients.scriptRunner = OSAScriptRunner(process: RecordingOsascriptProcess())
+        defer { BackendClients.resetDefaults() }
+
         let code = MacverbsApp.run(arguments: ["doctor"])
         #expect(code == ExitCodes.success)
         let text = try pipes.readOutput()
         #expect(text.contains("macverbs doctor"))
         #expect(text.contains("missing:"))
+        #expect(text.contains("Calendar"))
+        #expect(try pipes.readError().isEmpty)
+    }
+}
+
+@Test func doctorCommandWithProductionEventKitKind() throws {
+    try withRedirectedStdio { pipes in
+        BackendClients.eventStore = EKEventStoreClient(
+            backing: FakeEventKitBacking(calendar: .fullAccess, reminders: .fullAccess)
+        )
+        BackendClients.scriptRunner = OSAScriptRunner(process: RecordingOsascriptProcess())
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(arguments: ["--json", "doctor"])
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        let data = Data(text.utf8)
+        let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        #expect(obj?["ok"] as? Bool == true)
+        let backends = obj?["backends"] as? [String: Any]
+        let eventKit = backends?["eventKit"] as? [String: Any]
+        #expect(eventKit?["kind"] as? String == EKEventStoreClient.kind)
         #expect(try pipes.readError().isEmpty)
     }
 }
@@ -600,7 +889,7 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
     #expect(help.contains("doctor"))
 }
 
-// MARK: - Stdio test helpers
+// MARK: - Stdio / global backend test helpers
 
 private struct StdioPipes {
     let outRead: FileHandle
@@ -628,12 +917,19 @@ private struct StdioPipes {
     }
 }
 
-/// Serialize stdio redirection — Swift Testing runs cases in parallel by default.
-private let stdioTestLock = NSLock()
+/// Serialize process-global CLI state — Swift Testing runs cases in parallel.
+/// Covers `CLIOutput` stdio handles and `BackendClients` injection.
+private let globalCLIStateLock = NSLock()
+
+private func withBackendClientsLock(_ body: () throws -> Void) throws {
+    globalCLIStateLock.lock()
+    defer { globalCLIStateLock.unlock() }
+    try body()
+}
 
 private func withRedirectedStdio(_ body: (StdioPipes) throws -> Void) throws {
-    stdioTestLock.lock()
-    defer { stdioTestLock.unlock() }
+    globalCLIStateLock.lock()
+    defer { globalCLIStateLock.unlock() }
 
     let outPipe = Pipe()
     let errPipe = Pipe()
