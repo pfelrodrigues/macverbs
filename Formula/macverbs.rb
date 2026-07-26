@@ -1,5 +1,4 @@
 # Homebrew formula for macverbs.
-# Canonical public install (after tap publish):
 #
 #   brew install pfelrodrigues/macverbs/macverbs
 #
@@ -11,10 +10,11 @@ class Macverbs < Formula
   license "MIT"
   head "https://github.com/pfelrodrigues/macverbs.git", branch: "main"
 
-  depends_on xcode: ["15.0", :build]
   depends_on :macos
 
   def install
+    odie "Swift toolchain not found (install Xcode or Command Line Tools)" unless which("swift")
+
     system "swift", "build", "-c", "release", "--disable-sandbox"
     bin.install ".build/release/macverbs"
 
