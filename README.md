@@ -39,12 +39,13 @@ macverbs doctor
 ### Homebrew
 
 ```bash
-brew install pfelrodrigues/macverbs/macverbs
+brew install pfelrodrigues/tap/macverbs
 macverbs --version
 macverbs doctor
 ```
 
-Tap repo: [pfelrodrigues/homebrew-macverbs](https://github.com/pfelrodrigues/homebrew-macverbs).  
+Tap: [pfelrodrigues/homebrew-tap](https://github.com/pfelrodrigues/homebrew-tap)  
+(`brew install pfelrodrigues/tap/macverbs`). Formula copy: [`Formula/macverbs.rb`](Formula/macverbs.rb).  
 Release process: [`docs/RELEASE.md`](docs/RELEASE.md).
 
 ## Permissions (TCC)

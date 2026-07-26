@@ -1,6 +1,8 @@
 # Homebrew formula for macverbs.
 #
-#   brew install pfelrodrigues/macverbs/macverbs
+#   brew install pfelrodrigues/tap/macverbs
+#
+# Canonical tap: https://github.com/pfelrodrigues/homebrew-tap
 #
 class Macverbs < Formula
   desc "Agent-first CLI for macOS Mail, Reminders, Notes, and Calendar"

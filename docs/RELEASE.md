@@ -26,20 +26,21 @@ curl -sL "https://github.com/pfelrodrigues/macverbs/archive/refs/tags/v0.1.0.tar
 
 Update `Formula/macverbs.rb`: `url` → tag archive, set `sha256`, set `version "0.1.0"`.
 
-## 4. Homebrew tap (one-time)
+## 4. Homebrew tap
+
+Canonical tap: **`pfelrodrigues/homebrew-tap`**  
+Install path: **`brew install pfelrodrigues/tap/macverbs`**
 
 ```bash
-# after approval — creates public repo
-gh repo create pfelrodrigues/homebrew-macverbs --public --description "Homebrew tap for macverbs"
+# after approval — update formula on the tap (repo already exists)
+git clone https://github.com/pfelrodrigues/homebrew-tap.git
+# edit Formula/macverbs.rb (url, sha256, version), commit, push
 ```
-
-Copy formula to `homebrew-macverbs/Formula/macverbs.rb` and push.
 
 ## 5. Install verify
 
 ```bash
-brew tap pfelrodrigues/macverbs
-brew install macverbs
+brew install pfelrodrigues/tap/macverbs
 macverbs --version
 macverbs doctor
 ```
