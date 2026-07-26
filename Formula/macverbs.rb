@@ -7,7 +7,7 @@ class Macverbs < Formula
   desc "Agent-first CLI for macOS Mail, Reminders, Notes, and Calendar"
   homepage "https://github.com/pfelrodrigues/macverbs"
   url "https://github.com/pfelrodrigues/macverbs/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "PLACEHOLDER_SHA256"
+  sha256 "bb1a76063a1162503cf2bad1aa922b9fca04a70d173e37e81158d95b662cb2e9"
   license "MIT"
   head "https://github.com/pfelrodrigues/macverbs.git", branch: "main"
 
