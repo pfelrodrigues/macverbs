@@ -30,10 +30,9 @@ run = "echo check-ok"
 
 [tasks.run]
 description = "Run macverbs (args after --)"
-# Note: do not insert a bare `--` before cli args. `swift run <product> -- <args>`
-# forwards that `--` into the process argv, which breaks ArgumentParser flags.
-run = "swift run macverbs {{arg(name='cli_args', var=true, default='')}}"
-
+# Wrapper drops empty default args from mise templates (see scripts/macverbs_run.sh).
+# Do not use `swift run macverbs -- …` — the bare `--` is forwarded into argv.
+run = "bash scripts/macverbs_run.sh {{arg(name='cli_args', var=true, default='')}}"
 [tasks.version]
 description = "Print swift + git identity"
 run = """

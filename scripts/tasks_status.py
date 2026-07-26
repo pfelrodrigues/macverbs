@@ -46,6 +46,11 @@ def main() -> int:
         manual = meta.get("manual", "false").lower() == "true"
         rows.append((tid, status, title_of(text, meta), manual))
     if args.next:
+        # Prefer in-progress work so a half-finished task is not skipped.
+        for tid, status, _title, manual in rows:
+            if status == "in_progress" and not manual:
+                print(tid)
+                return 0
         for tid, status, _title, manual in rows:
             if status == "pending" and not manual:
                 print(tid)

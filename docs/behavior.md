@@ -71,7 +71,7 @@ Do not paste proprietary account names into examples. Use `Work`, `Personal`, `A
 | Verb | Status |
 |------|--------|
 | doctor | planned |
-| --version / --help | planned (T01) |
+| --version / --help | **done** (T01) |
 
 ## JSON field notes (fill as verbs land)
 
