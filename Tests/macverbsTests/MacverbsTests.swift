@@ -889,6 +889,196 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
     #expect(help.contains("doctor"))
 }
 
+// MARK: - Mail accounts + unread (T14)
+
+@Test func mailScriptsAccountsContainsOracleMarkers() {
+    let s = MailScripts.accounts()
+    #expect(s.contains("tell application \"Mail\""))
+    #expect(s.contains("repeat with acct in accounts"))
+    #expect(s.contains("account type of acct"))
+    #expect(s.contains("email addresses of acct"))
+    #expect(s.contains("character id 31"))
+    #expect(s.contains("character id 30"))
+}
+
+@Test func mailScriptsUnreadContainsOracleMarkers() {
+    let s = MailScripts.unread()
+    #expect(s.contains("tell application \"Mail\""))
+    #expect(s.contains("repeat with acct in accounts"))
+    #expect(s.contains("unread count of mb"))
+    #expect(s.contains("if u > 0 then"))
+}
+
+@Test func mailAccountsParsesRecords() throws {
+    let fs = AppleScript.fieldSeparator
+    let rs = AppleScript.recordSeparator
+    let out = "Work\(fs)imap\(fs)a@x.com\(rs)Personal\(fs)exchange\(fs)b@y.com\(rs)"
+    let items = try Mail.accounts(runner: MockScriptRunner(stdout: out))
+    #expect(
+        items == [
+            MailAccount(name: "Work", type: "imap", email: "a@x.com"),
+            MailAccount(name: "Personal", type: "exchange", email: "b@y.com"),
+        ]
+    )
+}
+
+@Test func mailAccountsEmptyOutput() throws {
+    let items = try Mail.accounts(runner: MockScriptRunner(stdout: ""))
+    #expect(items.isEmpty)
+}
+
+@Test func mailAccountsPropagatesSystemError() {
+    let runner = MockScriptRunner(error: MacverbsError.system("AppleScript failed"))
+    do {
+        _ = try Mail.accounts(runner: runner)
+        Issue.record("expected throw")
+    } catch let error as MacverbsError {
+        #expect(error == .system("AppleScript failed"))
+        #expect(error.processExitCode == ExitCodes.system)
+    } catch {
+        Issue.record("unexpected error \(error)")
+    }
+}
+
+@Test func mailUnreadParsesIntCounts() throws {
+    let fs = AppleScript.fieldSeparator
+    let rs = AppleScript.recordSeparator
+    let out = "Work\(fs)5\(rs)Personal\(fs)2\(rs)"
+    let items = try Mail.unread(runner: MockScriptRunner(stdout: out))
+    #expect(
+        items == [
+            MailUnreadCount(account: "Work", unread: 5),
+            MailUnreadCount(account: "Personal", unread: 2),
+        ]
+    )
+}
+
+@Test func mailUnreadEmptyAndBadCount() throws {
+    #expect(try Mail.unread(runner: MockScriptRunner(stdout: "")).isEmpty)
+    let fs = AppleScript.fieldSeparator
+    let rs = AppleScript.recordSeparator
+    let items = try Mail.unread(runner: MockScriptRunner(stdout: "Acme\(fs)\(rs)"))
+    #expect(items == [MailUnreadCount(account: "Acme", unread: 0)])
+}
+
+@Test func mailFormatAccountsText() {
+    #expect(Mail.formatAccounts([]) == "no accounts.")
+    let text = Mail.formatAccounts([
+        MailAccount(name: "Work", type: "imap", email: "a@x.com")
+    ])
+    #expect(text == "- Work | imap | a@x.com")
+}
+
+@Test func mailFormatUnreadText() {
+    #expect(Mail.formatUnread([]) == "no unread.")
+    let text = Mail.formatUnread([MailUnreadCount(account: "Work", unread: 3)])
+    #expect(text == "- Work: 3 unread")
+}
+
+@Test func mailAccountsCommandJsonOnStdout() throws {
+    try withRedirectedStdio { pipes in
+        let fs = AppleScript.fieldSeparator
+        let rs = AppleScript.recordSeparator
+        BackendClients.scriptRunner = MockScriptRunner(
+            stdout: "Work\(fs)imap\(fs)user@example.com\(rs)"
+        )
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(arguments: ["--json", "mail", "accounts"])
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        let data = Data(text.utf8)
+        let arr = try JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+        #expect(arr?.count == 1)
+        #expect(arr?[0]["name"] as? String == "Work")
+        #expect(arr?[0]["type"] as? String == "imap")
+        #expect(arr?[0]["email"] as? String == "user@example.com")
+        // Sorted keys: email before name before type.
+        if let emailRange = text.range(of: "\"email\""),
+            let nameRange = text.range(of: "\"name\""),
+            let typeRange = text.range(of: "\"type\"")
+        {
+            #expect(emailRange.lowerBound < nameRange.lowerBound)
+            #expect(nameRange.lowerBound < typeRange.lowerBound)
+        } else {
+            Issue.record("expected email/name/type keys")
+        }
+        #expect(try pipes.readError().isEmpty)
+    }
+}
+
+@Test func mailUnreadCommandJsonOnStdout() throws {
+    try withRedirectedStdio { pipes in
+        let fs = AppleScript.fieldSeparator
+        let rs = AppleScript.recordSeparator
+        BackendClients.scriptRunner = MockScriptRunner(stdout: "Work\(fs)5\(rs)")
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(arguments: ["--json", "mail", "unread"])
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        let data = Data(text.utf8)
+        let arr = try JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+        #expect(arr?.count == 1)
+        #expect(arr?[0]["account"] as? String == "Work")
+        #expect(arr?[0]["unread"] as? Int == 5)
+        #expect(try pipes.readError().isEmpty)
+    }
+}
+
+@Test func mailAccountsCommandTextOnStdout() throws {
+    try withRedirectedStdio { pipes in
+        let fs = AppleScript.fieldSeparator
+        let rs = AppleScript.recordSeparator
+        BackendClients.scriptRunner = MockScriptRunner(
+            stdout: "Personal\(fs)imap\(fs)p@x.com\(rs)"
+        )
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(arguments: ["mail", "accounts"])
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        #expect(text.contains("- Personal | imap | p@x.com"))
+        #expect(try pipes.readError().isEmpty)
+    }
+}
+
+@Test func mailUnreadCommandTextOnStdout() throws {
+    try withRedirectedStdio { pipes in
+        BackendClients.scriptRunner = MockScriptRunner(stdout: "")
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(arguments: ["mail", "unread"])
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        #expect(text.contains("no unread."))
+        #expect(try pipes.readError().isEmpty)
+    }
+}
+
+@Test func mailAccountsSystemFailureExit2() throws {
+    try withRedirectedStdio { pipes in
+        BackendClients.scriptRunner = MockScriptRunner(
+            error: MacverbsError.system("Mail not running")
+        )
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(arguments: ["mail", "accounts"])
+        #expect(code == ExitCodes.system)
+        let err = try pipes.readError()
+        #expect(err.contains("error: Mail not running"))
+        #expect(try pipes.readOutput().isEmpty)
+    }
+}
+
+@Test func mailHelpListsSubcommands() {
+    let help = Macverbs.helpMessage()
+    #expect(help.contains("mail"))
+    let mailHelp = MailCommand.helpMessage()
+    #expect(mailHelp.contains("accounts"))
+    #expect(mailHelp.contains("unread"))
+}
+
 // MARK: - Stdio / global backend test helpers
 
 private struct StdioPipes {

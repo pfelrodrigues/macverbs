@@ -71,8 +71,8 @@ Date/time forms: `YYYY-MM-DD HH:MM` (oracle-compatible).
 
 | Verb | Args | Status |
 |------|------|--------|
-| accounts | | planned |
-| unread | | planned |
+| accounts | | **done** (T14) |
+| unread | | **done** (T14) |
 | list | `--account` (empty = all) `--limit` (default `20`) `--mailbox inbox\|archive` (default `inbox`) | planned |
 | read | `message-id`, `--account` | planned |
 | archive | `ids…`, `--account` (required); **Gmail → unsupported** (honest refuse) | planned |
@@ -80,6 +80,41 @@ Date/time forms: `YYYY-MM-DD HH:MM` (oracle-compatible).
 | attachments | `message-id`, `--dest` (required), `--account` | planned |
 | draft | `message-id`, `--body-file` (required), `--attach`… (repeatable), `--account`; **never send** | planned |
 | compose | `--subject` `--body-file` (required) `--to`… `--cc`… `--account`; **never send** | planned |
+
+
+#### mail accounts (T14)
+
+Lists Mail.app accounts via Apple Events (`ScriptRunner`). No flags.
+
+JSON: array of `{ "name", "type", "email" }` (stable keys). Text:
+`- name | type | email` (or `no accounts.`).
+
+```json
+[
+  {
+    "email": "user@example.com",
+    "name": "Work",
+    "type": "imap"
+  }
+]
+```
+
+#### mail unread (T14)
+
+Per-account unread totals (sum of mailbox `unread count`). Accounts with zero
+unread are omitted by the script (oracle parity).
+
+JSON: array of `{ "account", "unread" }` with `unread` as integer. Text:
+`- account: N unread` (or `no unread.`).
+
+```json
+[
+  {
+    "account": "Work",
+    "unread": 5
+  }
+]
+```
 
 #### Mail behavioral constraints (oracle)
 

@@ -14,7 +14,8 @@ struct Macverbs: ParsableCommand {
             """,
         version: Version.current,
         subcommands: [
-            DoctorCommand.self
+            DoctorCommand.self,
+            MailCommand.self,
         ]
     )
 
