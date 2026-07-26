@@ -12,7 +12,17 @@ struct CalendarEventItem: Codable, Equatable, Sendable {
     var calendar: String
 }
 
-// MARK: - List logic
+/// Result of `calendar add` (oracle keys: `created`, `start`, `end`).
+struct CalendarAddResult: Codable, Equatable, Sendable {
+    /// Created event title.
+    var created: String
+    /// Echo of the start argument (`YYYY-MM-DD HH:MM`).
+    var start: String
+    /// Echo of the end argument (`YYYY-MM-DD HH:MM`).
+    var end: String
+}
+
+// MARK: - List / add logic
 
 /// Calendar domain verbs (EventKit; no icalBuddy).
 enum CalendarService {
@@ -118,6 +128,91 @@ enum CalendarService {
         return mapEvents(raw, aliases: aliases, calendar: calendar)
     }
 
+    /// Parse oracle datetime `YYYY-MM-DD HH:MM` in the given calendar/time zone.
+    static func parseDateTime(
+        _ string: String,
+        calendar: Calendar = .current
+    ) throws -> Date {
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        guard let date = formatter.date(from: trimmed) else {
+            throw MacverbsError.domain(
+                "invalid date '\(string)' (expected YYYY-MM-DD HH:MM)"
+            )
+        }
+        return date
+    }
+
+    /// Resolve `--calendar` to an EventKit UID.
+    ///
+    /// Empty name → `nil` (store default). Otherwise match alias label, EventKit
+    /// title, or UID. Throws domain when no match.
+    static func resolveCalendarUID(
+        name: String,
+        calendars: [EventKitCalendarInfo],
+        aliases: CalendarAliases
+    ) throws -> String? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return nil
+        }
+
+        // Prefer config alias label (disambiguates same-named calendars).
+        for (uid, label) in aliases.labelsByUID where label == trimmed {
+            if calendars.contains(where: { $0.uid == uid }) {
+                return uid
+            }
+        }
+
+        // EventKit calendar title (oracle: Calendar.app name).
+        if let match = calendars.first(where: { $0.title == trimmed }) {
+            return match.uid
+        }
+
+        // Allow passing the raw UID when known.
+        if calendars.contains(where: { $0.uid == trimmed }) {
+            return trimmed
+        }
+
+        throw MacverbsError.domain("calendar \(trimmed) not found")
+    }
+
+    /// Create a timed event. `--calendar` empty uses the EventKit default calendar.
+    static func add(
+        title: String,
+        start: String,
+        end: String,
+        calendarName: String = "",
+        eventStore: any EventStoreClient = BackendClients.eventStore,
+        aliases: CalendarAliases = Config.loadCalendarAliases(),
+        calendar: Calendar = .current
+    ) throws -> CalendarAddResult {
+        try eventStore.ensureAccess(for: .event)
+
+        let startDate = try parseDateTime(start, calendar: calendar)
+        let endDate = try parseDateTime(end, calendar: calendar)
+        guard endDate > startDate else {
+            throw MacverbsError.domain("--end must be after --start")
+        }
+
+        let known = try eventStore.eventCalendars()
+        let uid = try resolveCalendarUID(
+            name: calendarName,
+            calendars: known,
+            aliases: aliases
+        )
+        try eventStore.saveEvent(
+            title: title,
+            start: startDate,
+            end: endDate,
+            calendarUID: uid
+        )
+        return CalendarAddResult(created: title, start: start, end: end)
+    }
+
     /// Human text for a list result (English public CLI).
     static func formatText(_ items: [CalendarEventItem]) -> String {
         if items.isEmpty {
@@ -129,6 +224,11 @@ enum CalendarService {
             }
             .joined(separator: "\n")
     }
+
+    /// Human text for an add result.
+    static func formatAdd(_ result: CalendarAddResult) -> String {
+        "created: \(result.created)"
+    }
 }
 
 // MARK: - CLI
@@ -138,7 +238,7 @@ struct CalendarCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "calendar",
         abstract: "Calendar events (EventKit).",
-        subcommands: [CalendarListCommand.self]
+        subcommands: [CalendarListCommand.self, CalendarAddCommand.self]
     )
 }
 
@@ -158,5 +258,38 @@ struct CalendarListCommand: ParsableCommand {
     func run() throws {
         let items = try CalendarService.list(days: days)
         try CLIOutput.emit(items, text: CalendarService.formatText)
+    }
+}
+
+/// `macverbs calendar add TITLE --start --end [--calendar]`.
+struct CalendarAddCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "add",
+        abstract: "Create a timed calendar event (EventKit)."
+    )
+
+    @Argument(help: "Event title.")
+    var title: String
+
+    @Option(name: .long, help: "Start datetime (YYYY-MM-DD HH:MM).")
+    var start: String
+
+    @Option(name: .long, help: "End datetime (YYYY-MM-DD HH:MM).")
+    var end: String
+
+    @Option(
+        name: .long,
+        help: "Calendar alias, title, or UID. Empty = default calendar."
+    )
+    var calendar: String = ""
+
+    func run() throws {
+        let result = try CalendarService.add(
+            title: title,
+            start: start,
+            end: end,
+            calendarName: calendar
+        )
+        try CLIOutput.emit(result, text: CalendarService.formatAdd)
     }
 }

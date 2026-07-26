@@ -88,7 +88,7 @@ keys). Text: `- title | list: … | due: … | priority: … | notes: …`.
 | Verb | Args | Status |
 |------|------|--------|
 | list | `--days` (default `7`) | **done** (T07) |
-| add | `title`, `--start` (required) `--end` (required) `--calendar` | planned |
+| add | `title`, `--start` (required) `--end` (required) `--calendar` (optional) | **done** (T08) |
 
 Date/time forms: `YYYY-MM-DD HH:MM` (oracle-compatible).
 
@@ -120,6 +120,27 @@ Text: one line per event `- title | when | calendar`, or `no events.` when empty
 
 Exit 1 when Calendar access is denied / restricted / write-only / not granted
 (after a request). Exit 2 on EventKit system failure.
+
+#### calendar add (T08)
+
+EventKit (no AppleScript). Creates a timed event with required `--start` and
+`--end` (`YYYY-MM-DD HH:MM`). Optional `--calendar` resolves in order: config
+alias label (`calendars.json`), EventKit calendar title, then raw UID. Empty
+`--calendar` uses the store default for new events. Fails with exit 1 when the
+named calendar does not exist, dates are invalid, or `--end` is not after
+`--start`.
+
+JSON:
+
+```json
+{
+  "created": "Standup",
+  "end": "2026-07-05 11:00",
+  "start": "2026-07-05 10:00"
+}
+```
+
+Text: `created: Standup`.
 
 
 ### notes
@@ -238,6 +259,8 @@ code).
 - Calendar data (T07): `eventCalendars()` and `events(from:to:)` (half-open
   range; recurring instances expanded by EventKit). DTOs:
   `EventKitCalendarInfo`, `EventKitEventInfo`.
+- Calendar create (T08): `saveEvent(title:start:end:calendarUID:)` (`nil` UID →
+  store default calendar for new events).
 - Production: `EKEventStoreClient` (`kind: eventkit`) wraps `EKEventStore` via
   injectable `EventKitBacking` (live store or test double).
 - Unit tests use `MockEventStoreClient` / fake backing; never require live TCC.

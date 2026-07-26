@@ -169,6 +169,27 @@ private struct SamplePayload: Codable, Equatable {
 
 // MARK: - Seams (EventStoreClient + ScriptRunner)
 
+/// One recorded `saveEvent` call for mock verification (T08).
+struct MockSavedEvent: Equatable, Sendable {
+    var title: String
+    var start: Date
+    var end: Date
+    var calendarUID: String?
+}
+
+/// Shared log so struct mocks can record saves without mutating self in protocol methods.
+final class MockEventSaveLog: @unchecked Sendable {
+    private(set) var events: [MockSavedEvent] = []
+
+    func append(_ event: MockSavedEvent) {
+        events.append(event)
+    }
+
+    func reset() {
+        events.removeAll()
+    }
+}
+
 /// Test double for EventKit; never links EventKit / never prompts TCC.
 struct MockEventStoreClient: EventStoreClient {
     var calendar: EventAuthorizationStatus = .notDetermined
@@ -180,6 +201,8 @@ struct MockEventStoreClient: EventStoreClient {
     var requestError: Error?
     /// Optional failure from data query methods.
     var dataError: Error?
+    /// Optional failure from `saveEvent`.
+    var saveError: Error?
     /// Canned event calendars (default empty).
     var calendars: [EventKitCalendarInfo] = []
     /// Canned events (default empty).
@@ -188,6 +211,8 @@ struct MockEventStoreClient: EventStoreClient {
     var reminderListInfos: [ReminderListInfo] = []
     /// Canned incomplete reminders (default empty).
     var reminderItems: [ReminderItem] = []
+    /// Optional recorder for `saveEvent` calls (inject in tests that verify save).
+    var saveLog: MockEventSaveLog?
 
     func authorizationStatus(for entity: EventEntityType) -> EventAuthorizationStatus {
         switch entity {
@@ -228,6 +253,29 @@ struct MockEventStoreClient: EventStoreClient {
         return eventInfos.filter { $0.startDate >= start && $0.startDate < end }
     }
 
+    func saveEvent(
+        title: String,
+        start: Date,
+        end: Date,
+        calendarUID: String?
+    ) throws {
+        if let saveError {
+            throw saveError
+        }
+        if let dataError {
+            throw dataError
+        }
+        saveLog?
+            .append(
+                MockSavedEvent(
+                    title: title,
+                    start: start,
+                    end: end,
+                    calendarUID: calendarUID
+                )
+            )
+    }
+
     func reminderLists() throws -> [ReminderListInfo] {
         if let dataError {
             throw dataError
@@ -255,17 +303,20 @@ final class FakeEventKitBacking: EventKitBacking, @unchecked Sendable {
     var statuses: [EventEntityType: EventAuthorizationStatus]
     var grantOnRequest: Bool
     var requestError: Error?
+    var saveError: Error?
     var calendars: [EventKitCalendarInfo]
     var eventInfos: [EventKitEventInfo]
     var reminderListInfos: [ReminderListInfo]
     var reminderItems: [ReminderItem]
     private(set) var requestCalls: [EventEntityType] = []
+    private(set) var savedEvents: [MockSavedEvent] = []
 
     init(
         calendar: EventAuthorizationStatus = .notDetermined,
         reminders: EventAuthorizationStatus = .notDetermined,
         grantOnRequest: Bool = false,
         requestError: Error? = nil,
+        saveError: Error? = nil,
         calendars: [EventKitCalendarInfo] = [],
         eventInfos: [EventKitEventInfo] = [],
         reminderListInfos: [ReminderListInfo] = [],
@@ -274,6 +325,7 @@ final class FakeEventKitBacking: EventKitBacking, @unchecked Sendable {
         self.statuses = [.event: calendar, .reminder: reminders]
         self.grantOnRequest = grantOnRequest
         self.requestError = requestError
+        self.saveError = saveError
         self.calendars = calendars
         self.eventInfos = eventInfos
         self.reminderListInfos = reminderListInfos
@@ -303,6 +355,30 @@ final class FakeEventKitBacking: EventKitBacking, @unchecked Sendable {
 
     func events(from start: Date, to end: Date) throws -> [EventKitEventInfo] {
         eventInfos.filter { $0.startDate >= start && $0.startDate < end }
+    }
+
+    func saveEvent(
+        title: String,
+        start: Date,
+        end: Date,
+        calendarUID: String?
+    ) throws {
+        if let saveError {
+            throw saveError
+        }
+        if let calendarUID {
+            guard calendars.contains(where: { $0.uid == calendarUID }) else {
+                throw MacverbsError.domain("calendar not found")
+            }
+        }
+        savedEvents.append(
+            MockSavedEvent(
+                title: title,
+                start: start,
+                end: end,
+                calendarUID: calendarUID
+            )
+        )
     }
 
     func reminderLists() throws -> [ReminderListInfo] {
@@ -1273,6 +1349,7 @@ private func utcDate(
     #expect(help.contains("calendar"))
     let calHelp = CalendarCommand.helpMessage()
     #expect(calHelp.contains("list"))
+    #expect(calHelp.contains("add"))
 }
 
 @Test func ekClientDelegatesEventsToFakeBacking() throws {
@@ -1297,6 +1374,369 @@ private func utcDate(
     #expect(items.count == 1)
     #expect(items[0].title == "Sync")
     #expect(try client.eventCalendars().isEmpty)
+}
+
+// MARK: - Calendar add (T08)
+
+@Test func calendarParseDateTimeValid() throws {
+    let date = try CalendarService.parseDateTime(
+        "2026-07-05 10:00",
+        calendar: utcCalendar()
+    )
+    #expect(date == utcDate(2026, 7, 5, 10, 0))
+}
+
+@Test func calendarParseDateTimeInvalid() {
+    do {
+        _ = try CalendarService.parseDateTime("not-a-date", calendar: utcCalendar())
+        Issue.record("expected throw")
+    } catch let error as MacverbsError {
+        #expect(error.processExitCode == ExitCodes.domain)
+        #expect(error.message.contains("invalid date"))
+        #expect(error.message.contains("YYYY-MM-DD HH:MM"))
+    } catch {
+        Issue.record("unexpected error \(error)")
+    }
+}
+
+@Test func calendarResolveUIDByAliasTitleAndUID() throws {
+    let calendars = [
+        EventKitCalendarInfo(uid: "UID-WORK", title: "Calendario"),
+        EventKitCalendarInfo(uid: "UID-ACME", title: "Acme"),
+    ]
+    let aliases = CalendarAliases(labelsByUID: ["UID-WORK": "Work"])
+
+    #expect(
+        try CalendarService.resolveCalendarUID(
+            name: "",
+            calendars: calendars,
+            aliases: aliases
+        ) == nil
+    )
+    #expect(
+        try CalendarService.resolveCalendarUID(
+            name: "Work",
+            calendars: calendars,
+            aliases: aliases
+        ) == "UID-WORK"
+    )
+    #expect(
+        try CalendarService.resolveCalendarUID(
+            name: "Acme",
+            calendars: calendars,
+            aliases: aliases
+        ) == "UID-ACME"
+    )
+    #expect(
+        try CalendarService.resolveCalendarUID(
+            name: "UID-ACME",
+            calendars: calendars,
+            aliases: aliases
+        ) == "UID-ACME"
+    )
+}
+
+@Test func calendarResolveMissingThrowsDomain() {
+    do {
+        _ = try CalendarService.resolveCalendarUID(
+            name: "Missing",
+            calendars: [EventKitCalendarInfo(uid: "U1", title: "Work")],
+            aliases: .empty
+        )
+        Issue.record("expected throw")
+    } catch let error as MacverbsError {
+        #expect(error == .domain("calendar Missing not found"))
+        #expect(error.processExitCode == ExitCodes.domain)
+    } catch {
+        Issue.record("unexpected error \(error)")
+    }
+}
+
+@Test func calendarAddWithMockVerifiesSave() throws {
+    let log = MockEventSaveLog()
+    let store = MockEventStoreClient(
+        calendar: .fullAccess,
+        reminders: .fullAccess,
+        calendars: [
+            EventKitCalendarInfo(uid: "UID-WORK", title: "Calendario"),
+            EventKitCalendarInfo(uid: "UID-ACME", title: "Acme"),
+        ],
+        saveLog: log
+    )
+    let result = try CalendarService.add(
+        title: "Standup",
+        start: "2026-07-05 10:00",
+        end: "2026-07-05 11:00",
+        calendarName: "Work",
+        eventStore: store,
+        aliases: CalendarAliases(labelsByUID: ["UID-WORK": "Work"]),
+        calendar: utcCalendar()
+    )
+    #expect(
+        result
+            == CalendarAddResult(
+                created: "Standup",
+                start: "2026-07-05 10:00",
+                end: "2026-07-05 11:00"
+            )
+    )
+    #expect(log.events.count == 1)
+    #expect(log.events[0].title == "Standup")
+    #expect(log.events[0].start == utcDate(2026, 7, 5, 10, 0))
+    #expect(log.events[0].end == utcDate(2026, 7, 5, 11, 0))
+    #expect(log.events[0].calendarUID == "UID-WORK")
+}
+
+@Test func calendarAddDefaultCalendarSavesWithNilUID() throws {
+    let log = MockEventSaveLog()
+    let store = MockEventStoreClient(
+        calendar: .fullAccess,
+        reminders: .fullAccess,
+        calendars: [EventKitCalendarInfo(uid: "UID-ACME", title: "Acme")],
+        saveLog: log
+    )
+    let result = try CalendarService.add(
+        title: "E",
+        start: "2026-07-05 10:00",
+        end: "2026-07-05 11:00",
+        calendarName: "",
+        eventStore: store,
+        aliases: .empty,
+        calendar: utcCalendar()
+    )
+    #expect(result.created == "E")
+    #expect(log.events.count == 1)
+    #expect(log.events[0].calendarUID == nil)
+}
+
+@Test func calendarAddMissingCalendarThrowsDomain() {
+    let log = MockEventSaveLog()
+    let store = MockEventStoreClient(
+        calendar: .fullAccess,
+        reminders: .fullAccess,
+        calendars: [EventKitCalendarInfo(uid: "UID-ACME", title: "Acme")],
+        saveLog: log
+    )
+    do {
+        _ = try CalendarService.add(
+            title: "E",
+            start: "2026-07-05 10:00",
+            end: "2026-07-05 11:00",
+            calendarName: "Ghost",
+            eventStore: store,
+            aliases: .empty,
+            calendar: utcCalendar()
+        )
+        Issue.record("expected throw")
+    } catch let error as MacverbsError {
+        #expect(error == .domain("calendar Ghost not found"))
+        #expect(error.processExitCode == ExitCodes.domain)
+        #expect(log.events.isEmpty)
+    } catch {
+        Issue.record("unexpected error \(error)")
+    }
+}
+
+@Test func calendarAddEndBeforeStartThrowsDomain() {
+    let store = MockEventStoreClient(
+        calendar: .fullAccess,
+        reminders: .fullAccess,
+        calendars: [EventKitCalendarInfo(uid: "U1", title: "Work")]
+    )
+    do {
+        _ = try CalendarService.add(
+            title: "E",
+            start: "2026-07-05 11:00",
+            end: "2026-07-05 10:00",
+            eventStore: store,
+            calendar: utcCalendar()
+        )
+        Issue.record("expected throw")
+    } catch let error as MacverbsError {
+        #expect(error == .domain("--end must be after --start"))
+    } catch {
+        Issue.record("unexpected error \(error)")
+    }
+}
+
+@Test func calendarAddDeniedThrowsDomain() {
+    let store = MockEventStoreClient(calendar: .denied, reminders: .fullAccess)
+    do {
+        _ = try CalendarService.add(
+            title: "E",
+            start: "2026-07-05 10:00",
+            end: "2026-07-05 11:00",
+            eventStore: store,
+            calendar: utcCalendar()
+        )
+        Issue.record("expected throw")
+    } catch let error as MacverbsError {
+        #expect(error.processExitCode == ExitCodes.domain)
+        #expect(error.message.contains("Calendar access denied"))
+    } catch {
+        Issue.record("unexpected error \(error)")
+    }
+}
+
+@Test func calendarAddPropagatesSaveSystemError() {
+    var store = MockEventStoreClient(
+        calendar: .fullAccess,
+        reminders: .fullAccess,
+        calendars: [EventKitCalendarInfo(uid: "U1", title: "Work")]
+    )
+    store.saveError = MacverbsError.system("EventKit save failed: boom")
+    do {
+        _ = try CalendarService.add(
+            title: "E",
+            start: "2026-07-05 10:00",
+            end: "2026-07-05 11:00",
+            calendarName: "Work",
+            eventStore: store,
+            calendar: utcCalendar()
+        )
+        Issue.record("expected throw")
+    } catch let error as MacverbsError {
+        #expect(error == .system("EventKit save failed: boom"))
+        #expect(error.processExitCode == ExitCodes.system)
+    } catch {
+        Issue.record("unexpected error \(error)")
+    }
+}
+
+@Test func calendarFormatAddText() {
+    #expect(
+        CalendarService.formatAdd(
+            CalendarAddResult(
+                created: "Standup",
+                start: "2026-07-05 10:00",
+                end: "2026-07-05 11:00"
+            )
+        ) == "created: Standup"
+    )
+}
+
+@Test func calendarAddCommandJsonOnStdout() throws {
+    try withRedirectedStdio { pipes in
+        let log = MockEventSaveLog()
+        BackendClients.eventStore = MockEventStoreClient(
+            calendar: .fullAccess,
+            reminders: .fullAccess,
+            calendars: [EventKitCalendarInfo(uid: "UID-ACME", title: "Acme")],
+            saveLog: log
+        )
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(
+            arguments: [
+                "--json",
+                "calendar",
+                "add",
+                "E",
+                "--start",
+                "2026-07-05 10:00",
+                "--end",
+                "2026-07-05 11:00",
+                "--calendar",
+                "Acme",
+            ]
+        )
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        let data = Data(text.utf8)
+        let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        #expect(obj?["created"] as? String == "E")
+        #expect(obj?["start"] as? String == "2026-07-05 10:00")
+        #expect(obj?["end"] as? String == "2026-07-05 11:00")
+        if let createdRange = text.range(of: "\"created\""),
+            let endRange = text.range(of: "\"end\""),
+            let startRange = text.range(of: "\"start\"")
+        {
+            #expect(createdRange.lowerBound < endRange.lowerBound)
+            #expect(endRange.lowerBound < startRange.lowerBound)
+        } else {
+            Issue.record("expected created/end/start keys")
+        }
+        #expect(log.events.count == 1)
+        #expect(log.events[0].title == "E")
+        #expect(log.events[0].calendarUID == "UID-ACME")
+        #expect(try pipes.readError().isEmpty)
+    }
+}
+
+@Test func calendarAddCommandTextOnStdout() throws {
+    try withRedirectedStdio { pipes in
+        BackendClients.eventStore = MockEventStoreClient(
+            calendar: .fullAccess,
+            reminders: .fullAccess,
+            calendars: [EventKitCalendarInfo(uid: "UID-ACME", title: "Acme")]
+        )
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(
+            arguments: [
+                "calendar",
+                "add",
+                "E",
+                "--start",
+                "2026-07-05 10:00",
+                "--end",
+                "2026-07-05 11:00",
+            ]
+        )
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        #expect(text.contains("created: E"))
+        #expect(try pipes.readError().isEmpty)
+    }
+}
+
+@Test func calendarAddCommandMissingCalendarExit1() throws {
+    try withRedirectedStdio { pipes in
+        BackendClients.eventStore = MockEventStoreClient(
+            calendar: .fullAccess,
+            reminders: .fullAccess,
+            calendars: [EventKitCalendarInfo(uid: "UID-ACME", title: "Acme")]
+        )
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(
+            arguments: [
+                "calendar",
+                "add",
+                "E",
+                "--start",
+                "2026-07-05 10:00",
+                "--end",
+                "2026-07-05 11:00",
+                "--calendar",
+                "Ghost",
+            ]
+        )
+        #expect(code == ExitCodes.domain)
+        let err = try pipes.readError()
+        #expect(err.contains("error: calendar Ghost not found"))
+        #expect(try pipes.readOutput().isEmpty)
+    }
+}
+
+@Test func ekClientDelegatesSaveToFakeBacking() throws {
+    let start = utcDate(2026, 7, 5, 10, 0)
+    let end = utcDate(2026, 7, 5, 11, 0)
+    let fake = FakeEventKitBacking(
+        calendar: .fullAccess,
+        reminders: .fullAccess,
+        calendars: [EventKitCalendarInfo(uid: "UID-ACME", title: "Acme")]
+    )
+    let client = EKEventStoreClient(backing: fake)
+    try client.saveEvent(
+        title: "Sync",
+        start: start,
+        end: end,
+        calendarUID: "UID-ACME"
+    )
+    #expect(fake.savedEvents.count == 1)
+    #expect(fake.savedEvents[0].title == "Sync")
+    #expect(fake.savedEvents[0].calendarUID == "UID-ACME")
 }
 
 // MARK: - Mail accounts + unread (T14)

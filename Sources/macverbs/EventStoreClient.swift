@@ -138,6 +138,23 @@ protocol EventStoreClient: Sendable {
     ///   - end: Exclusive range end (EventKit predicate convention).
     func events(from start: Date, to end: Date) throws -> [EventKitEventInfo]
 
+    /// Create and persist a timed calendar event.
+    ///
+    /// - Parameters:
+    ///   - title: Event summary.
+    ///   - start: Inclusive start.
+    ///   - end: EventKit end date.
+    ///   - calendarUID: Target calendar identifier; `nil` uses the store default
+    ///     for new events.
+    /// - Throws: `MacverbsError.domain` when the UID is unknown or there is no
+    ///   default calendar; `MacverbsError.system` on EventKit save failure.
+    func saveEvent(
+        title: String,
+        start: Date,
+        end: Date,
+        calendarUID: String?
+    ) throws
+
     /// Reminder lists with incomplete counts (caller must `ensureAccess` first).
     func reminderLists() throws -> [ReminderListInfo]
 
@@ -184,6 +201,14 @@ protocol EventKitBacking: Sendable {
 
     /// Events in `[start, end)` with recurrence expansion.
     func events(from start: Date, to end: Date) throws -> [EventKitEventInfo]
+
+    /// Create and persist a timed calendar event (`calendarUID` nil → default).
+    func saveEvent(
+        title: String,
+        start: Date,
+        end: Date,
+        calendarUID: String?
+    ) throws
 
     /// Reminder lists with incomplete counts (no auth prompt).
     func reminderLists() throws -> [ReminderListInfo]
@@ -266,6 +291,36 @@ final class LiveEventKitBacking: EventKitBacking, @unchecked Sendable {
                     calendarTitle: event.calendar.title
                 )
             }
+    }
+
+    func saveEvent(
+        title: String,
+        start: Date,
+        end: Date,
+        calendarUID: String?
+    ) throws {
+        let event = EKEvent(eventStore: store)
+        event.title = title
+        event.startDate = start
+        event.endDate = end
+        if let calendarUID {
+            guard let calendar = store.calendar(withIdentifier: calendarUID) else {
+                throw MacverbsError.domain("calendar not found")
+            }
+            event.calendar = calendar
+        } else {
+            guard let calendar = store.defaultCalendarForNewEvents else {
+                throw MacverbsError.domain("no default calendar available")
+            }
+            event.calendar = calendar
+        }
+        do {
+            try store.save(event, span: .thisEvent, commit: true)
+        } catch {
+            throw MacverbsError.system(
+                "EventKit save failed: \(error.localizedDescription)"
+            )
+        }
     }
 
     func reminderLists() throws -> [ReminderListInfo] {
@@ -354,6 +409,20 @@ struct EKEventStoreClient: EventStoreClient {
         try backing.events(from: start, to: end)
     }
 
+    func saveEvent(
+        title: String,
+        start: Date,
+        end: Date,
+        calendarUID: String?
+    ) throws {
+        try backing.saveEvent(
+            title: title,
+            start: start,
+            end: end,
+            calendarUID: calendarUID
+        )
+    }
+
     func reminderLists() throws -> [ReminderListInfo] {
         try backing.reminderLists()
     }
@@ -387,6 +456,17 @@ struct StubEventStoreClient: EventStoreClient {
     }
 
     func events(from start: Date, to end: Date) throws -> [EventKitEventInfo] {
+        throw MacverbsError.system(
+            "EventKit client not wired (Calendar, Reminders; see T06)"
+        )
+    }
+
+    func saveEvent(
+        title: String,
+        start: Date,
+        end: Date,
+        calendarUID: String?
+    ) throws {
         throw MacverbsError.system(
             "EventKit client not wired (Calendar, Reminders; see T06)"
         )
