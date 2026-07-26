@@ -60,3 +60,21 @@ fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
+
+# Swift / SPM
+.build/
+.swiftpm/
+Packages/
+*.xcodeproj
+xcuserdata/
+DerivedData/
+Package.resolved
+
+# mise local
+.mise.local.toml
+mise.local.toml
+
+# agent / local
+.config-local/
+*.swp
+.DS_Store

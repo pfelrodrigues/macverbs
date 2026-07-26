@@ -1,0 +1,48 @@
+# macverbs — project isolation via mise
+# Swift: Apple CLT/Xcode on PATH (`swift --version`).
+# Human/agent entrypoints: `mise run <task>`.
+
+min_version = "2025.8.0"
+
+[env]
+MACVERBS_ROOT = "{{config_root}}"
+# Calendar aliases etc. (outside repo). Override in shell or mise.local.toml.
+MACVERBS_CONFIG_DIR = "~/.config/macverbs"
+# Behavior oracle while porting (Python CLI).
+MACVERBS_APPLE_SPEC = "~/nix/clis/apple"
+
+[tasks.resolve]
+description = "Resolve Swift package dependencies"
+run = "swift package resolve"
+
+[tasks.build]
+description = "Build debug binary"
+run = "swift build"
+
+[tasks.test]
+description = "Run unit tests"
+run = "swift test"
+
+[tasks.check]
+description = "Build + test (agent verification gate)"
+depends = ["build", "test"]
+run = "echo check-ok"
+
+[tasks.run]
+description = "Run macverbs (args after --)"
+run = "swift run macverbs -- {{arg(name='cli_args', var=true, default='')}}"
+
+[tasks.version]
+description = "Print swift + git identity"
+run = """
+swift --version
+git rev-parse --short HEAD 2>/dev/null || true
+"""
+
+[tasks.tasks-list]
+description = "List roadmap tasks and status"
+run = "python3 scripts/tasks_status.py"
+
+[tasks.next]
+description = "Print first pending non-manual task id"
+run = "python3 scripts/tasks_status.py --next"

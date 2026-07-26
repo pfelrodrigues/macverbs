@@ -4,7 +4,7 @@ Agent-first CLI for **macOS Mail, Reminders, Notes, and Calendar**.
 
 Stable JSON verbs for coding agents and shell scripts. Built to be dogfooded daily; distributed via Homebrew (personal tap first, homebrew-core later).
 
-> **Status:** public scaffold. Implementation in progress (Swift rewrite). Not installable yet.
+> **Status:** public scaffold + roadmap. Implementation in progress (Swift rewrite). Not installable yet.
 
 ## Goals
 
@@ -21,6 +21,19 @@ Stable JSON verbs for coding agents and shell scripts. Built to be dogfooded dai
 | Mail, Notes | Apple Events (Open Scripting Architecture) |
 
 One binary, two backends. Not EventKit-only (Mail and Notes have no public EventKit surface).
+
+## Develop (mise)
+
+```bash
+cd ~/work/Pessoal/macverbs   # or your clone
+mise trust                   # once
+mise run tasks-list          # roadmap status
+mise run next                # next automated task id
+mise run build && mise run test
+mise run check               # agent gate
+```
+
+Agent instructions: **[AGENTS.md](AGENTS.md)**. Task loop: `docs/ROADMAP.md` + workflow `implement-task`.
 
 ## Not this project
 
