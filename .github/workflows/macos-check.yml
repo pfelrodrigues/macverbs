@@ -34,7 +34,7 @@ jobs:
       contains(github.event.pull_request.labels.*.name, 'ci-macos')
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Swift version
         run: |
