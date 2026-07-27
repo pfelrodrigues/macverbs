@@ -5,7 +5,7 @@ import Foundation
 
 /// One note row from `notes list` / `notes search`.
 ///
-/// Keys match the oracle: `title`, `modified`.
+/// Keys: `title`, `modified`.
 struct NoteItem: Codable, Equatable, Sendable {
     var title: String
     /// Modification date as Notes reports it (locale text from AppleScript).
@@ -28,11 +28,11 @@ struct NoteCreateResult: Codable, Equatable, Sendable {
     var folder: String
 }
 
-// MARK: - AppleScript builders (oracle: apple.scripts)
+// MARK: - AppleScript builders
 
 /// Pure AppleScript source for Notes verbs. Testable without osascript.
 enum NotesScripts {
-    /// Header defining US/RS field/record separators (oracle `_H`).
+    /// Header defining US/RS field/record separators (US/RS header).
     private static let separatorsHeader = """
         set fs to (character id 31)
         set rs to (character id 30)
@@ -41,7 +41,7 @@ enum NotesScripts {
 
     /// List notes in a folder: title, modification date (RS/FS delimited).
     ///
-    /// Default folder is `"Notes"` (oracle parity).
+    /// Default folder is `"Notes"` (contract).
     static func list(folder: String = "Notes") -> String {
         let f = AppleScript.escape(folder)
         return separatorsHeader
@@ -99,13 +99,13 @@ enum NotesScripts {
     }
 }
 
-// MARK: - Commands (oracle: apple.commands)
+// MARK: - Commands
 
 enum Notes {
     /// Default osascript timeout (same as production ScriptRunner).
     static let defaultTimeout: TimeInterval = OSAScriptRunner.defaultTimeout
 
-    /// Default Notes folder name (oracle).
+    /// Default Notes folder name .
     static let defaultFolder = "Notes"
 
     /// List notes in a folder via Apple Events.
@@ -174,7 +174,7 @@ enum Notes {
         return items.map { "- \($0.title) | \($0.modified)" }.joined(separator: "\n")
     }
 
-    /// Human text for `notes read` (body only; oracle `fmt.body`).
+    /// Human text for `notes read` (body only; body only).
     static func formatBody(_ result: NoteBody) -> String {
         if result.body.isEmpty {
             return "(empty)"
@@ -182,7 +182,7 @@ enum Notes {
         return result.body
     }
 
-    /// Human text for `notes create` (English; oracle shape).
+    /// Human text for `notes create` (English).
     static func formatCreate(_ result: NoteCreateResult) -> String {
         "created: \(result.created)"
     }

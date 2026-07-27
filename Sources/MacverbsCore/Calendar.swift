@@ -6,7 +6,7 @@ import Foundation
 /// One listed calendar event for agents (`title`, `when`, `calendar`).
 struct CalendarEventItem: Codable, Equatable, Sendable {
     var title: String
-    /// Human time window (oracle-compatible: `YYYY-MM-DD at HH:MM - HH:MM` or date).
+    /// Human time window (stable form: `YYYY-MM-DD at HH:MM - HH:MM` or date).
     var when: String
     /// Label from `calendars.json` UID map, else EventKit calendar title.
     var calendar: String
@@ -24,7 +24,7 @@ struct CalendarInfoItem: Codable, Equatable, Sendable {
     var label: String
 }
 
-/// Result of `calendar add` (oracle keys: `created`, `start`, `end`).
+/// Result of `calendar add` (JSON keys: `created`, `start`, `end`).
 struct CalendarAddResult: Codable, Equatable, Sendable {
     /// Created event title.
     var created: String
@@ -38,7 +38,7 @@ struct CalendarAddResult: Codable, Equatable, Sendable {
 
 /// Calendar domain verbs (EventKit; no icalBuddy).
 enum CalendarService {
-    /// Inclusive days after today for `--days` (oracle: `eventsToday+N`).
+    /// Inclusive days after today for `--days` (`eventsToday+N`).
     ///
     /// - Parameter days: Non-negative count of days ahead of today (0 = today only).
     /// - Returns: Half-open range `[startOfToday, startOfToday+(days+1))`.
@@ -57,7 +57,7 @@ enum CalendarService {
         return (start, end)
     }
 
-    /// Format an EventKit occurrence into the oracle-style `when` string.
+    /// Format an EventKit occurrence into the `when` string.
     ///
     /// All-day end dates are exclusive in EventKit (next midnight); multi-day
     /// all-day ranges become `YYYY-MM-DD - YYYY-MM-DD`.
@@ -144,7 +144,7 @@ enum CalendarService {
         return mapEvents(raw, aliases: aliases, calendar: calendar)
     }
 
-    /// Parse oracle datetime `YYYY-MM-DD HH:MM` in the given calendar/time zone.
+    /// Parse datetime `YYYY-MM-DD HH:MM` in the given calendar/time zone.
     static func parseDateTime(
         _ string: String,
         calendar: Calendar = .current
@@ -183,7 +183,7 @@ enum CalendarService {
             }
         }
 
-        // EventKit calendar title (oracle: Calendar.app name).
+        // EventKit calendar title .
         if let match = calendars.first(where: { $0.title == trimmed }) {
             return match.uid
         }

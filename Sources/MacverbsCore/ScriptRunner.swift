@@ -131,9 +131,9 @@ struct StubAutomationPermissionClient: AutomationPermissionClient {
     }
 }
 
-// MARK: - Delimiters + escape + structured parse (oracle: apple.osa)
+// MARK: - Delimiters + escape + structured parse
 
-/// Field / record separators and helpers matching the Python `apple.osa` oracle.
+/// Field / record separators and helpers for structured AppleScript output.
 ///
 /// Scripts emit records delimited by control characters (US/RS) so structured
 /// data can be recovered without ambiguous text splitting.
@@ -145,7 +145,7 @@ enum AppleScript {
 
     /// Escape a string for interpolation inside AppleScript double quotes.
     ///
-    /// Order matches the oracle: backslash first, then double quote.
+    /// Order: backslash first, then double quote.
     static func escape(_ string: String) -> String {
         string
             .replacingOccurrences(of: "\\", with: "\\\\")
@@ -286,7 +286,7 @@ struct OSAScriptRunner: ScriptRunner {
     /// Identity string for doctor / diagnostics.
     static let kind = "osascript"
 
-    /// Default timeout when callers do not override (oracle: 30s).
+    /// Default timeout when callers do not override (30s).
     static let defaultTimeout: TimeInterval = 30
 
     private let process: any OsascriptProcessLaunching
