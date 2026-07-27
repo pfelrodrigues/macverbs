@@ -1,5 +1,5 @@
 import Foundation
-@testable import macverbs
+@testable import MacverbsCore
 
 /// Process-wide lock for CLIOutput handles + BackendClients + env overrides.
 /// All tests that touch shared process state must take this lock.

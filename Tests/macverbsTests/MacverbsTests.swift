@@ -2,7 +2,7 @@ import EventKit
 import Foundation
 import Testing
 
-@testable import macverbs
+@testable import MacverbsCore
 
 @Test func versionStringIsSemver() {
     let parts = Version.current.split(separator: ".")
@@ -747,7 +747,7 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
         _ = try stub.requestAccess(for: .reminder)
         Issue.record("expected throw")
     } catch let error as MacverbsError {
-        #expect(error == .system("EventKit client not wired (Calendar, Reminders; see T06)"))
+        #expect(error == .system("EventKit client not wired (Calendar, Reminders)"))
         #expect(error.processExitCode == ExitCodes.system)
     } catch {
         Issue.record("unexpected error \(error)")

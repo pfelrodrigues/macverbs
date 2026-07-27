@@ -73,7 +73,7 @@ enum Doctor {
             || reminders == .unavailable
         {
             missing.append(
-                "EventKit client not wired (Calendar, Reminders; see T06)"
+                "EventKit client not wired (Calendar, Reminders)"
             )
         } else {
             appendEventKitGaps(entity: .event, status: calendar, into: &missing)
@@ -82,7 +82,7 @@ enum Doctor {
 
         if !scriptWired {
             missing.append(
-                "ScriptRunner not wired (Mail, Notes via Apple Events; see T13)"
+                "ScriptRunner not wired (Mail, Notes via Apple Events)"
             )
         } else {
             appendAutomationGaps(target: .mail, status: mailStatus, into: &missing)
@@ -261,7 +261,11 @@ enum Doctor {
 struct DoctorCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "doctor",
-        abstract: "Report environment readiness (no permission prompts)."
+        abstract: "Report environment readiness (no permission prompts).",
+        discussion: """
+            Reports EventKit and Automation status without prompting.
+            Example: macverbs doctor   |   macverbs --json doctor
+            """
     )
 
     func run() throws {

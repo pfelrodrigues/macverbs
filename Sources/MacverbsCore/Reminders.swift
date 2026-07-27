@@ -541,6 +541,14 @@ struct RemindersCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "reminders",
         abstract: "Reminders via EventKit.",
+        discussion: """
+            Examples:
+              macverbs --json reminders lists
+              macverbs reminders list --list Inbox
+              macverbs reminders add "Task" --list Work --due 2026-08-01
+            Exact title match for done/move/edit/delete. Prefer re-list after writes.
+
+            """,
         subcommands: [
             RemindersListsCommand.self,
             RemindersListCommand.self,

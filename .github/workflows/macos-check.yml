@@ -1,7 +1,11 @@
 # macOS runner is expensive — not on every PR by default.
 # - workflow_dispatch: pre-release / when you want GitHub to re-run build+test
 # - schedule: weekly smoke so bitrot is noticed
+# - pull_request + label ci-macos: opt-in full build on a PR
 # Local gate remains: `mise run check` on a Mac with Swift.
+#
+# Note: default CI on Linux only runs `swift format` — the macOS product target
+# does not build under Linux.
 name: macOS check
 
 on:
@@ -11,8 +15,11 @@ on:
         description: "Why run macOS CI (optional note)"
         required: false
         default: "manual verification"
+      coverage:
+        description: "Upload llvm-cov summary artifact"
+        type: boolean
+        default: false
   schedule:
-    # Mondays 12:00 UTC — low urgency smoke
     - cron: "0 12 * * 1"
   pull_request:
     branches: [main]
@@ -22,7 +29,6 @@ jobs:
   build-test:
     name: build + test (macos)
     runs-on: macos-15
-    # On PRs: only when labeled `ci-macos` (avoids cost on docs-only PRs).
     if: >
       github.event_name != 'pull_request' ||
       contains(github.event.pull_request.labels.*.name, 'ci-macos')
@@ -38,6 +44,14 @@ jobs:
             echo "dispatch reason: ${{ inputs.reason }}"
           fi
 
+      - name: Cache SPM
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: ${{ runner.os }}-spm-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
       - name: Format lint (strict)
         run: |
           swift format lint \
@@ -52,6 +66,21 @@ jobs:
         run: swift build
 
       - name: Test
-        # Unit tests use mocks/fakes; some optional live EventKit paths no-op
-        # without TCC on the runner. Do not set secrets for real Mail accounts.
         run: bash scripts/swift_test.sh
+
+      - name: Coverage summary (optional)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.coverage }}
+        run: |
+          bash scripts/swift_test.sh --enable-code-coverage
+          BIN="$(find .build -type f -path '*macverbsPackageTests.xctest/Contents/MacOS/macverbsPackageTests' ! -path '*.dSYM*' | head -1)"
+          PROF="$(find .build -name 'default.profdata' | head -1)"
+          xcrun llvm-cov report "$BIN" -instr-profile="$PROF" \
+            -ignore-filename-regex='.build|Tests|checkouts|runner.swift|ArgumentParser' \
+            | tee coverage-report.txt
+
+      - name: Upload coverage report
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.coverage }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage-report.txt

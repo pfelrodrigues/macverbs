@@ -26,7 +26,17 @@ macverbs config calendars show
 read/write. Mail/Notes need Automation permission for the Terminal (or agent
 host) under **System Settings → Privacy & Security → Automation**.
 
+```text
+  you / agent
+       │
+       ▼
+   macverbs
+       ├── EventKit  → Calendar + Reminders (TCC)
+       └── Apple Events → Mail + Notes apps (Automation)
+```
+
 Config directory: `~/.config/macverbs` (override with `MACVERBS_CONFIG_DIR`).
+Trust model: [SECURITY.md](../SECURITY.md).
 
 ## Completions
 

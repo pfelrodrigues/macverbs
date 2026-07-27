@@ -299,6 +299,14 @@ struct CalendarCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "calendar",
         abstract: "Calendar events (EventKit).",
+        discussion: """
+            Examples:
+              macverbs calendar list --days 7
+              macverbs --json calendar list --days 2
+              macverbs calendar calendars
+              macverbs calendar add "Standup" --start "2026-08-01 10:00" --end "2026-08-01 10:30"
+
+            """,
         subcommands: [
             CalendarListCommand.self,
             CalendarAddCommand.self,

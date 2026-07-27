@@ -1,6 +1,7 @@
 # Behavior contract
 
-Target UX and JSON shapes for agents and scripts.
+**Public contract** of the `macverbs` CLI: UX, JSON shapes, and exit codes for
+humans and agents. Recipes live in [`usage.md`](usage.md).
 
 Do not paste proprietary account names into examples. Use `Work`, `Personal`, `Acme`.
 
@@ -18,9 +19,7 @@ Do not paste proprietary account names into examples. Use `Work`, `Personal`, `A
 | Exit 2 | System / backend failure |
 | Exit 64 | Usage / parse error (`EX_USAGE`) |
 
-Errors always go to **stderr** as `error: …` (never to JSON stdout). This is a
-deliberate contract, not a port of the Python `apple` oracle (which mixed
-domain/usage as exit 1 and often printed `erro:` on stdout).
+Errors always go to **stderr** as `error: …` (never mixed into JSON stdout).
 
 Help (`-h` / `--help`) and `--version` write to stdout and exit 0. Usage failures
 (unknown option, missing required arg) write to stderr and exit 64.
@@ -33,9 +32,9 @@ Help (`-h` / `--help`) and `--version` write to stdout and exit 0. Usage failure
 | calendar | EventKit | No icalBuddy |
 | notes | Apple Events | osascript / NSAppleScript |
 | mail | Apple Events | osascript / NSAppleScript |
-| meta (`doctor`) | local checks | Must run without TCC where possible |
+| meta (`doctor`) | local checks | Must run without TCC prompts |
 
-## Domains and verbs (parity with `apple`)
+## Domains and verbs
 
 ### reminders
 
@@ -54,7 +53,7 @@ Help (`-h` / `--help`) and `--version` write to stdout and exit 0. Usage failure
 
 EventKit (no AppleScript). `reminders lists` returns each list with its
 incomplete count. `reminders list` returns incomplete items; `--list` filters
-by exact list title (empty = all lists). Priority mapping matches the oracle:
+by exact list title (empty = all lists). Priority mapping matches the contract:
 0 none (empty string), 1–4 `high`, 5 `medium`, 6–9 `low`. Due dates use
 `YYYY-MM-DD` or `YYYY-MM-DD HH:MM` (stable; not locale AppleScript text).
 
@@ -89,7 +88,7 @@ keys). Text: `- title | list: … | due: … | priority: … | notes: …`.
 
 EventKit mutations. Match for `done` / `delete` is **exact title** within the
 resolved list (incomplete only). Empty `--list` uses the default list for new
-reminders (oracle first/default list). Write priority map: high→1, medium→5,
+reminders (default list). Write priority map: high→1, medium→5,
 low→9. Due: `YYYY-MM-DD` or `YYYY-MM-DD HH:MM` (date-only defaults to 09:00).
 
 JSON add: `{ "created", "list" }` where `list` is the flag value, or `"(first)"`
@@ -165,7 +164,7 @@ fields to change.
 | list | `--days` (default `7`) |
 | add | `title`, `--start` (required) `--end` (required) `--calendar` (optional) |
 
-Date/time forms: `YYYY-MM-DD HH:MM` (oracle-compatible).
+Date/time forms: `YYYY-MM-DD HH:MM` (stable form).
 
 #### calendar list
 
@@ -174,7 +173,7 @@ day as start, the range is not inverted (inclusive last day is clamped).
 
 
 EventKit (no icalBuddy). Range: start of today through the end of day
-`today + --days` (oracle `eventsToday+N`). Recurring series are expanded into
+`today + --days` (contract `eventsToday+N`). Recurring series are expanded into
 individual occurrences by EventKit. Calendar label: UID → `calendars.json`
 alias when present, else EventKit calendar title.
 
@@ -243,12 +242,12 @@ AppleScript `modification date as text` string). Text: `- title | modified`,
 or `no notes.` when empty.
 
 JSON read: `{ "title", "body" }`. Text: the body string (or `(empty)` when
-blank) — oracle `fmt.body` prints body only.
+blank) — contract `fmt.body` prints body only.
 
 JSON create: `{ "created", "folder" }`. Text: `created: <title>`.
 
 Missing note / folder failures surface as AppleScript errors (exit 2 via
-ScriptRunner), matching the oracle (no special not-found sentinel).
+ScriptRunner), matching the contract (no special not-found sentinel).
 
 ```json
 [
@@ -308,7 +307,7 @@ JSON: array of `{ "name", "type", "email" }` (stable keys). Text:
 #### mail unread
 
 Per-account unread totals (sum of mailbox `unread count`). Accounts with zero
-unread are omitted by the script (oracle parity).
+unread are omitted by the script (documented parity).
 
 JSON: array of `{ "account", "unread" }` with `unread` as integer. Text:
 `- account: N unread` (or `no unread.`).
@@ -352,7 +351,7 @@ JSON: array of `{ "account", "date", "id", "read", "sender", "subject" }`
 Fetch one message by Message-ID (value from `mail list`, as returned — do not wrap in `<>` unless present). Optional
 `--account` narrows the search. Searches inbox **and** archive candidates
 (treated/replied mail is often already archived). Returns a multi-line body
-with From/Subject/Date lines plus content (oracle header labels kept for
+with From/Subject/Date lines plus content (contract header labels kept for
 parity). Missing message → exit 1 (`message <id> not found`).
 
 JSON: `{ "body": "…" }`. Text: the body string (or `(empty)` when blank).
@@ -485,7 +484,7 @@ JSON compose: `{ "subject", "to", "cc" }`. Text:
 }
 ```
 
-#### Mail behavioral constraints (oracle)
+#### Mail behavioral constraints (contract)
 
 - Multi-account: resolve inbox by name candidates (`INBOX` vs localized Exchange names). Prefer scanning all accounts when `--account` is empty.
 - `archive` / `delete`: **verify** effect (re-count IDs remaining in inbox). Never report success on silent no-ops. Return `moved` / `requested` (and `remaining` when applicable).
@@ -604,8 +603,8 @@ Text mode includes EventKit and Apple Events lines plus `missing:` bullets.
 - Production: `OSAScriptRunner` → `/usr/bin/osascript -e …` (process launch is
   injectable via `OsascriptProcessLaunching` for unit tests).
 - Non-zero exit → `MacverbsError.system` with stderr (or `"AppleScript failed"`).
-- `AppleScript.escape` for safe double-quoted string interpolation (oracle `esc`).
-- `AppleScript.parseRecords` for US/RS-delimited structured output (oracle
+- `AppleScript.escape` for safe double-quoted string interpolation (contract `esc`).
+- `AppleScript.parseRecords` for US/RS-delimited structured output (contract
   `parse_records`; field sep U+001F, record sep U+001E).
 
 ## JSON field notes (fill as verbs land)
@@ -632,3 +631,10 @@ Oracle return shapes (reference while porting; exact macverbs keys may gain fiel
 | mail attachments | `message_id`, `dest_dir`, `saved` |
 | mail draft | `message_id`, `status`, `attachments` |
 | mail compose | `subject`, `to`, `cc` |
+
+## History (optional reading)
+
+Early design aimed for behavioral parity with a personal Python CLI used by the
+maintainer. **macverbs is the public contract** now: do not require that tool
+to understand or contribute. Exit codes, English text defaults, and absolute
+ISO-style calendar `when` strings are deliberate product choices.

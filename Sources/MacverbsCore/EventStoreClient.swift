@@ -82,7 +82,7 @@ enum EventStoreAccess {
             return "\(name) access not granted; enable in \(settings)"
         case .unavailable:
             return
-                "\(name) EventKit client not wired (Calendar, Reminders; see T06)"
+                "\(name) EventKit client not wired (Calendar, Reminders)"
         case .fullAccess, .authorized:
             return "\(name) access error"
         }
@@ -285,7 +285,7 @@ protocol EventKitBacking: Sendable {
 
 /// Production backing over a long-lived `EKEventStore`.
 final class LiveEventKitBacking: EventKitBacking, @unchecked Sendable {
-    /// Shared store for calendar and reminder verbs (T07+).
+    /// Shared store for calendar and reminder verbs.
     let store: EKEventStore
 
     init(store: EKEventStore = EKEventStore()) {
@@ -652,19 +652,19 @@ struct StubEventStoreClient: EventStoreClient {
 
     func requestAccess(for entity: EventEntityType) throws -> EventAuthorizationStatus {
         throw MacverbsError.system(
-            "EventKit client not wired (Calendar, Reminders; see T06)"
+            "EventKit client not wired (Calendar, Reminders)"
         )
     }
 
     func eventCalendars() throws -> [EventKitCalendarInfo] {
         throw MacverbsError.system(
-            "EventKit client not wired (Calendar, Reminders; see T06)"
+            "EventKit client not wired (Calendar, Reminders)"
         )
     }
 
     func events(from start: Date, to end: Date) throws -> [EventKitEventInfo] {
         throw MacverbsError.system(
-            "EventKit client not wired (Calendar, Reminders; see T06)"
+            "EventKit client not wired (Calendar, Reminders)"
         )
     }
 
@@ -675,19 +675,19 @@ struct StubEventStoreClient: EventStoreClient {
         calendarUID: String?
     ) throws {
         throw MacverbsError.system(
-            "EventKit client not wired (Calendar, Reminders; see T06)"
+            "EventKit client not wired (Calendar, Reminders)"
         )
     }
 
     func reminderLists() throws -> [ReminderListInfo] {
         throw MacverbsError.system(
-            "EventKit client not wired (Calendar, Reminders; see T06)"
+            "EventKit client not wired (Calendar, Reminders)"
         )
     }
 
     func incompleteReminders(listName: String?) throws -> [ReminderItem] {
         throw MacverbsError.system(
-            "EventKit client not wired (Calendar, Reminders; see T06)"
+            "EventKit client not wired (Calendar, Reminders)"
         )
     }
 
@@ -699,19 +699,19 @@ struct StubEventStoreClient: EventStoreClient {
         priority: String
     ) throws -> ReminderCreated {
         throw MacverbsError.system(
-            "EventKit client not wired (Calendar, Reminders; see T06)"
+            "EventKit client not wired (Calendar, Reminders)"
         )
     }
 
     func completeReminder(title: String, listName: String?) throws -> ReminderDoneResult {
         throw MacverbsError.system(
-            "EventKit client not wired (Calendar, Reminders; see T06)"
+            "EventKit client not wired (Calendar, Reminders)"
         )
     }
 
     func deleteReminder(title: String, listName: String?) throws -> ReminderDeleted {
         throw MacverbsError.system(
-            "EventKit client not wired (Calendar, Reminders; see T06)"
+            "EventKit client not wired (Calendar, Reminders)"
         )
     }
 
@@ -721,7 +721,7 @@ struct StubEventStoreClient: EventStoreClient {
         toList: String
     ) throws -> ReminderMoved {
         throw MacverbsError.system(
-            "EventKit client not wired (Calendar, Reminders; see T06)"
+            "EventKit client not wired (Calendar, Reminders)"
         )
     }
 
@@ -733,13 +733,13 @@ struct StubEventStoreClient: EventStoreClient {
         notes: String
     ) throws -> ReminderEdited {
         throw MacverbsError.system(
-            "EventKit client not wired (Calendar, Reminders; see T06)"
+            "EventKit client not wired (Calendar, Reminders)"
         )
     }
 
     func ensureReminderList(name: String) throws -> ReminderListEnsured {
         throw MacverbsError.system(
-            "EventKit client not wired (Calendar, Reminders; see T06)"
+            "EventKit client not wired (Calendar, Reminders)"
         )
     }
 }
@@ -751,9 +751,9 @@ struct StubEventStoreClient: EventStoreClient {
 /// CLI entry is single-threaded; tests replace clients serially (same pattern as
 /// `CLIOutput.outFile`).
 enum BackendClients {
-    /// Production: real EventKit wrapper (T06).
+    /// Production: real EventKit wrapper.
     nonisolated(unsafe) static var eventStore: any EventStoreClient = EKEventStoreClient()
-    /// Production: real osascript runner (T13).
+    /// Production: real osascript runner.
     nonisolated(unsafe) static var scriptRunner: any ScriptRunner = OSAScriptRunner()
     /// Production: AE Automation probe for Mail/Notes (T21; no prompts).
     nonisolated(unsafe) static var automation: any AutomationPermissionClient =

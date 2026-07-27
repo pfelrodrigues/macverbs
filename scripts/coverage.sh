@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run tests with instrumentation and print line coverage for Sources/macverbs.
+# Run tests with instrumentation and print line coverage for Sources/MacverbsCore.
 # Optional: COVERAGE_MIN=97 bash scripts/coverage.sh  (fail if below threshold)
 set -euo pipefail
 
@@ -16,7 +16,7 @@ if [[ -z "$BIN" || -z "$PROF" ]]; then
   exit 2
 fi
 
-echo "== llvm-cov report (Sources/macverbs) =="
+echo "== llvm-cov report (Sources/MacverbsCore) =="
 xcrun llvm-cov report "$BIN" \
   -instr-profile="$PROF" \
   -ignore-filename-regex='.build|Tests|checkouts|runner.swift|ArgumentParser'
@@ -45,8 +45,8 @@ with open(lcov_path) as f:
         line = line.strip()
         if line.startswith("SF:"):
             path = line[3:]
-            if "Sources/macverbs/" in path:
-                cur = path.split("Sources/macverbs/")[-1]
+            if "Sources/MacverbsCore/" in path:
+                cur = path.split("Sources/MacverbsCore/")[-1]
             else:
                 cur = None
         elif cur and line.startswith("DA:"):

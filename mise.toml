@@ -33,7 +33,7 @@ description = "Lint style rules (same engine as format: swift format lint)"
 run = "swift format lint --configuration .swift-format --recursive --parallel --strict Sources Tests Package.swift"
 
 [tasks.coverage]
-description = "Unit tests + llvm-cov line report (Sources/macverbs); COVERAGE_MIN=97 optional"
+description = "Unit tests + llvm-cov line report (Sources/MacverbsCore); COVERAGE_MIN=97 optional"
 run = "bash scripts/coverage.sh"
 
 [tasks.check]

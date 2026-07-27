@@ -1,5 +1,6 @@
-# Cheap default CI: Linux only.
-# Full macOS build+test is manual — see macos-check.yml (workflow_dispatch).
+# Cheap default CI: Linux format only.
+# The product is macOS-only (EventKit / Apple Events); full build+test runs on
+# macOS — see macos-check.yml (schedule, workflow_dispatch, or PR label ci-macos).
 name: CI
 
 on:
