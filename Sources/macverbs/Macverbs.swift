@@ -36,7 +36,7 @@ struct Macverbs: ParsableCommand {
 
 enum Version {
     /// Semantic version of the macverbs binary.
-    static let current = "0.1.0"
+    static let current = "0.1.1"
 }
 
 // MARK: - Entry

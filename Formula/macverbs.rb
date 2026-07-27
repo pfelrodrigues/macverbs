@@ -7,8 +7,10 @@
 class Macverbs < Formula
   desc "Agent-first CLI for macOS Mail, Reminders, Notes, and Calendar"
   homepage "https://github.com/pfelrodrigues/macverbs"
-  url "https://github.com/pfelrodrigues/macverbs/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "bb1a76063a1162503cf2bad1aa922b9fca04a70d173e37e81158d95b662cb2e9"
+  url "https://github.com/pfelrodrigues/macverbs/archive/refs/tags/v0.1.1.tar.gz"
+  # sha256 filled after `git push origin v0.1.1` (see docs/RELEASE.md).
+  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  version "0.1.1"
   license "MIT"
   head "https://github.com/pfelrodrigues/macverbs.git", branch: "main"
 
@@ -26,6 +28,7 @@ class Macverbs < Formula
   end
 
   test do
-    assert_match "0.1.0", shell_output("#{bin}/macverbs --version")
+    assert_match "0.1.1", shell_output("#{bin}/macverbs --version")
   end
 end
+
