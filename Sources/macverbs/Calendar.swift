@@ -73,8 +73,12 @@ enum CalendarService {
         dateFormatter.dateFormat = "yyyy-MM-dd"
 
         if isAllDay {
-            // EventKit exclusive end → last inclusive day is end - 1 day.
-            let lastDay = calendar.date(byAdding: .day, value: -1, to: end) ?? end
+            // EventKit often uses an exclusive end (midnight of the day after the
+            // last inclusive day). Some stores report end on the same calendar day
+            // as start. Always clamp so lastDay is never before start (audit B1).
+            let exclusiveLast =
+                calendar.date(byAdding: .day, value: -1, to: end) ?? end
+            let lastDay = exclusiveLast < start ? start : exclusiveLast
             let startS = dateFormatter.string(from: start)
             let endS = dateFormatter.string(from: lastDay)
             if startS == endS {

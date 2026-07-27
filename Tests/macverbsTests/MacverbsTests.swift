@@ -1572,10 +1572,23 @@ private func utcDate(
     #expect(when == "2026-07-26 at 22:00 - 2026-07-27 at 09:00")
 }
 
-@Test func calendarFormatWhenAllDaySingle() {
+@Test func calendarFormatWhenAllDaySingleExclusiveEnd() {
+    // Classic EventKit: end is midnight of the day after the event.
     let when = CalendarService.formatWhen(
         start: utcDate(2026, 7, 26),
         end: utcDate(2026, 7, 27),
+        isAllDay: true,
+        calendar: utcCalendar()
+    )
+    #expect(when == "2026-07-26")
+}
+
+@Test func calendarFormatWhenAllDaySingleSameDayEnd() {
+    // Some EventKit stores report end on the same calendar day as start.
+    // Subtracting one day would invert; clamp to start.
+    let when = CalendarService.formatWhen(
+        start: utcDate(2026, 7, 26),
+        end: utcDate(2026, 7, 26),
         isAllDay: true,
         calendar: utcCalendar()
     )

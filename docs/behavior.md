@@ -18,6 +18,10 @@ Do not paste proprietary account names into examples. Use `Work`, `Personal`, `A
 | Exit 2 | System / backend failure |
 | Exit 64 | Usage / parse error (`EX_USAGE`) |
 
+Errors always go to **stderr** as `error: …` (never to JSON stdout). This is a
+deliberate contract, not a port of the Python `apple` oracle (which mixed
+domain/usage as exit 1 and often printed `erro:` on stdout).
+
 Help (`-h` / `--help`) and `--version` write to stdout and exit 0. Usage failures
 (unknown option, missing required arg) write to stderr and exit 64.
 
