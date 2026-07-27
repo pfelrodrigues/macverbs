@@ -11,6 +11,15 @@ struct Macverbs: ParsableCommand {
               --json    One JSON value on stdout; errors still go to stderr.
 
             Exit codes: 0 ok, 1 domain, 2 system, 64 usage.
+
+            Examples:
+              macverbs doctor
+              macverbs --json calendar list --days 7
+              macverbs reminders list --list Inbox
+              macverbs --json mail list --account Work --limit 20
+
+            First run: macverbs doctor, then optionally config calendars init.
+            See docs/usage.md in the repository for more recipes.
             """,
         version: Version.current,
         subcommands: [
@@ -24,12 +33,12 @@ struct Macverbs: ParsableCommand {
     )
 
     /// Declared so `--json` appears in root help. Leading peel in `MacverbsApp`
-    /// also accepts it before future domain subcommands (parity with `apple`).
+    /// also accepts it before the subcommand.
     @Flag(name: .long, help: "Emit one JSON value on stdout (place before the subcommand).")
     var json: Bool = false
 
     func run() throws {
-        // No domain verbs yet. Print help when invoked bare (or with only --json).
+        // Bare root (or only global flags): print help.
         print(Self.helpMessage())
     }
 }
@@ -42,9 +51,9 @@ enum Version {
 // MARK: - Entry
 
 /// Runnable CLI entry that returns an exit code (testable; does not call `exit`).
-enum MacverbsApp {
+public enum MacverbsApp {
     /// Parse and run with the given argv (no process name). Returns contract exit code.
-    static func run(arguments: [String]) -> Int32 {
+    public static func run(arguments: [String]) -> Int32 {
         var argv = arguments
         // Leading `--json` is peeled here; root `Macverbs.json` is only for help text.
         let json = GlobalFlags.peelLeading(&argv)
@@ -64,7 +73,7 @@ enum MacverbsApp {
 
     /// Run an arbitrary throwing body under the same error/exit contract as verbs.
     /// Used by tests (and future internal commands) to prove exit 1/2 + stderr.
-    static func runCatching(_ body: () throws -> Void) -> Int32 {
+    public static func runCatching(_ body: () throws -> Void) -> Int32 {
         do {
             try body()
             return ExitCodes.success
@@ -98,14 +107,5 @@ enum MacverbsApp {
             }
         }
         return code.rawValue
-    }
-}
-
-@main
-enum Main {
-    /// Process entry. Thin wrapper so logic lives in testable `MacverbsApp.run`.
-    static func main() {
-        // CommandLine + exit cannot be unit-tested without replacing the process.
-        Foundation.exit(MacverbsApp.run(arguments: Array(CommandLine.arguments.dropFirst())))
     }
 }

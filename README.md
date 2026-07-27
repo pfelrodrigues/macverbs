@@ -1,12 +1,23 @@
 # macverbs
 
 [![CI](https://github.com/pfelrodrigues/macverbs/actions/workflows/ci.yml/badge.svg)](https://github.com/pfelrodrigues/macverbs/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/pfelrodrigues/macverbs)](https://github.com/pfelrodrigues/macverbs/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Homebrew](https://img.shields.io/badge/homebrew-pfelrodrigues%2Ftap-orange)](https://github.com/pfelrodrigues/homebrew-tap)
 
 Agent-first CLI for **macOS Mail, Reminders, Notes, and Calendar**.
 
 Stable JSON verbs for coding agents and shell scripts. Human text when you omit `--json`.
+
+```bash
+# Agent
+macverbs --json calendar list --days 2
+# → [{ "calendar", "title", "when" }, …]
+
+# Human
+macverbs calendar list --days 2
+# → - Standup | 2026-08-01 at 10:00 - 10:30 | Work
+```
 
 ## Why
 
@@ -88,12 +99,29 @@ Global: `--json` **before** the subcommand. Exit: `0` ok, `1` domain, `2` system
 
 ## Permissions (TCC)
 
+```text
+  you / agent  →  macverbs  →  EventKit (Calendar, Reminders)
+                           →  Apple Events (Mail, Notes apps)
+```
+
 | Domain | Settings |
 |--------|----------|
 | Calendar / Reminders | **Privacy & Security → Calendars / Reminders** |
 | Mail / Notes | **Privacy & Security → Automation** (Terminal or agent host → Mail/Notes) |
 
-`macverbs doctor` reports status **without** prompting.
+`macverbs doctor` reports status **without** prompting. The CLI is **not** Mac App
+Store sandboxed; see [SECURITY.md](SECURITY.md) for the trust model.
+
+## Troubleshooting
+
+| Symptom | What to try |
+|---------|-------------|
+| `access denied` / domain exit 1 | `macverbs doctor`; enable TCC panes above; re-run the verb once to prompt |
+| Empty calendar list | Grant Calendars; check the date range (`--days`) |
+| Mail/Notes osascript errors | Open Mail/Notes once; allow Automation; `doctor` mail/notes lines |
+| Gmail archive “unsupported” | Expected — use delete/trash or archive in the Mail UI |
+| Labels all “Calendar” | `macverbs config calendars init` and edit aliases |
+| Wrong binary version | `brew upgrade macverbs` or rebuild from source |
 
 ## Calendar labels
 
@@ -120,24 +148,27 @@ Installed by Homebrew. From source: `mise run generate-completions` or
 mise trust
 mise run setup               # git hooks (format + conventional commits)
 mise run check               # format-check + build + test
-mise run coverage            # optional line coverage (Sources/)
+mise run coverage            # optional line coverage (MacverbsCore)
 mise run check-coverage      # coverage gate (default min 97%)
 ```
 
-Contributions: **[CONTRIBUTING.md](CONTRIBUTING.md)** · agents: **[AGENTS.md](AGENTS.md)**.
+Layout: library **`MacverbsCore`** + thin executable **`macverbs`**. Tests import the library.
+
+- Humans: **[CONTRIBUTING.md](CONTRIBUTING.md)** · [Code of Conduct](CODE_OF_CONDUCT.md)
+- Coding agents: **[AGENTS.md](AGENTS.md)**
 
 ## CI
 
 | Workflow | When | What |
 |----------|------|------|
-| [CI](.github/workflows/ci.yml) | push/PR → `main` | Linux `swift format lint` |
-| [macOS check](.github/workflows/macos-check.yml) | weekly schedule, `workflow_dispatch`, or PR label **`ci-macos`** | format + build + test on macOS |
+| [CI](.github/workflows/ci.yml) | push/PR → `main` | Linux **`swift format` only** (product is macOS-only) |
+| [macOS check](.github/workflows/macos-check.yml) | weekly, `workflow_dispatch`, or PR label **`ci-macos`** | format + build + test on macOS |
 
 Local Mac remains the primary gate (`mise run check`).
 
 ## Security
 
-See [SECURITY.md](SECURITY.md).
+See [SECURITY.md](SECURITY.md). Please use private vulnerability reporting for security issues.
 
 ## License
 

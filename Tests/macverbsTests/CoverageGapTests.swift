@@ -3,7 +3,7 @@ import EventKit
 import Foundation
 import Testing
 
-@testable import macverbs
+@testable import MacverbsCore
 
 // Shared CLI serialization: TestHelpers.swift
 

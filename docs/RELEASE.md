@@ -25,6 +25,14 @@ swift build -c release
 .build/release/macverbs --version
 ```
 
+Helper (bumps `Version.current`, runs check/build; does not push without flag):
+
+```bash
+bash scripts/release.sh 0.1.2           # prepare locally
+# after version PR is on main and you intend to publish:
+bash scripts/release.sh 0.1.2 --push    # tag, GH release, rewrite Formula sha256
+```
+
 Optional: run the **macOS check** workflow (`workflow_dispatch` or wait for the
 weekly schedule) before tagging.
 

@@ -80,9 +80,11 @@ The `commit-msg` git hook rejects non-conforming subjects (merge commits are all
 
 - **English** for code, comments, CLI help, and public docs.
 - Match the CLI contract in [`docs/behavior.md`](docs/behavior.md). Usage recipes: [`docs/usage.md`](docs/usage.md).
+- Package layout: implement features in **`MacverbsCore`**; keep `Sources/macverbs` as process entry only. Tests use `@testable import MacverbsCore`.
 - Injectable seams for EventKit / Apple Events; unit tests must not require live TCC when mocks suffice.
 - No secrets, no real personal account names in tests (use `Work`, `Personal`, `Acme`).
 - Format with Apple **`swift format`** (see `mise run format`).
+- Be kind; we follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ### Coverage
 

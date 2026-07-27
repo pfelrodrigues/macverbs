@@ -9,8 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Usage guide (`docs/usage.md`), Keep a Changelog file, and expanded contributor
-  notes (coverage gate, macOS CI, versioning policy).
+- Library target **`MacverbsCore`** with thin `macverbs` executable entry.
+- OSS community files: issue templates, Code of Conduct, CODEOWNERS, Dependabot.
+- `docs/usage.md`, Keep a Changelog, release helper `scripts/release.sh`.
+- Expanded trust/security docs (TCC diagram, supply chain, non-sandboxed CLI).
+- Root help and domain `--help` discussions with examples.
+- macOS CI: SPM cache, optional coverage artifact on `workflow_dispatch`.
+
+### Changed
+
+- Behavior doc framed as public contract (not internal migration notes).
+- User-facing “not wired” errors no longer reference internal task IDs.
+- `Package.resolved` is tracked for reproducible SPM resolution.
 
 ## [0.1.1] - 2026-07-26
 

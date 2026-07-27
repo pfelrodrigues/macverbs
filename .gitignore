@@ -68,7 +68,6 @@ Packages/
 *.xcodeproj
 xcuserdata/
 DerivedData/
-Package.resolved
 
 # mise local
 .mise.local.toml

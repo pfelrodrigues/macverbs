@@ -195,6 +195,13 @@ struct NotesCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "notes",
         abstract: "Notes folders and notes (Apple Events).",
+        discussion: """
+            Examples:
+              macverbs --json notes list --folder Notes
+              macverbs notes search "meeting"
+              macverbs notes create "Title" --body-file ./note.txt
+
+            """,
         subcommands: [
             NotesListCommand.self,
             NotesReadCommand.self,

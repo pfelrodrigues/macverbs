@@ -157,7 +157,7 @@ enum MailScripts {
     static let inboxNames =
         #"{"INBOX", "Caixa de Entrada", "Inbox", "Bandeja de entrada"}"#
 
-    /// Archive / All Mail name candidates (Gmail All Mail first — see T16 notes).
+    /// Archive / All Mail name candidates (Gmail All Mail first — Gmail notes).
     ///
     /// Oracle `_ARCHIVE_NAMES`.
     static let archiveNames =
@@ -945,6 +945,14 @@ struct MailCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "mail",
         abstract: "Mail accounts and messages (Apple Events).",
+        discussion: """
+            Examples:
+              macverbs --json mail accounts
+              macverbs --json mail list --account Work --limit 20
+              macverbs --json mail archive --account Work -- "message-id"
+            Use id from mail list as-is. Prefer --json for agents. Gmail archive is unsupported.
+
+            """,
         subcommands: [
             MailAccountsCommand.self,
             MailUnreadCommand.self,

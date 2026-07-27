@@ -315,7 +315,7 @@ struct StubScriptRunner: ScriptRunner {
 
     func run(script: String, timeout: TimeInterval) throws -> String {
         throw MacverbsError.system(
-            "ScriptRunner not wired (Apple Events / osascript pending)"
+            "ScriptRunner not wired (Mail, Notes via Apple Events)"
         )
     }
 }

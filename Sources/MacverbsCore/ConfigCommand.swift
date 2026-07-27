@@ -62,6 +62,14 @@ struct ConfigCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "config",
         abstract: "Show and initialize macverbs config (calendars.json).",
+        discussion: """
+            Examples:
+              macverbs config path
+              macverbs config calendars show
+              macverbs config calendars init
+            Config dir: ~/.config/macverbs (MACVERBS_CONFIG_DIR).
+
+            """,
         subcommands: [
             ConfigPathCommand.self,
             ConfigCalendarsCommand.self,
