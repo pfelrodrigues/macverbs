@@ -1,6 +1,7 @@
-# Expensive macOS runner — manual only.
-# Use for pre-release / when you want GitHub to re-run `swift build` + `swift test`.
-# Local gate remains: `mise run check` (format + build + test) on your Mac.
+# macOS runner is expensive — not on every PR by default.
+# - workflow_dispatch: pre-release / when you want GitHub to re-run build+test
+# - schedule: weekly smoke so bitrot is noticed
+# Local gate remains: `mise run check` on a Mac with Swift.
 name: macOS check
 
 on:
@@ -10,11 +11,21 @@ on:
         description: "Why run macOS CI (optional note)"
         required: false
         default: "manual verification"
+  schedule:
+    # Mondays 12:00 UTC — low urgency smoke
+    - cron: "0 12 * * 1"
+  pull_request:
+    branches: [main]
+    types: [labeled, opened, synchronize, reopened]
 
 jobs:
   build-test:
     name: build + test (macos)
     runs-on: macos-15
+    # On PRs: only when labeled `ci-macos` (avoids cost on docs-only PRs).
+    if: >
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'ci-macos')
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -23,7 +34,9 @@ jobs:
         run: |
           swift --version
           swift format --version
-          echo "dispatch reason: ${{ inputs.reason }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "dispatch reason: ${{ inputs.reason }}"
+          fi
 
       - name: Format lint (strict)
         run: |
@@ -39,4 +52,6 @@ jobs:
         run: swift build
 
       - name: Test
-        run: swift test
+        # Unit tests use mocks/fakes; some optional live EventKit paths no-op
+        # without TCC on the runner. Do not set secrets for real Mail accounts.
+        run: bash scripts/swift_test.sh

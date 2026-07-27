@@ -18,14 +18,19 @@ Thanks for helping. This project uses **[GitHub Flow](https://docs.github.com/en
 5. **Keep CI green.** Local gate before you push:
 
    ```bash
-   mise run setup    # once per clone: git hooks
-   mise run check    # format-check + build + test
+   mise run setup           # once per clone: git hooks
+   mise run check           # format-check + build + test
+   mise run check-coverage  # optional: line coverage gate (default min 97%)
    ```
 
 6. **Merge** via PR (squash or merge commit is fine; message must stay conventional).
 7. **Delete the branch** after merge.
 
-Releases and Homebrew tap updates are documented in [`docs/RELEASE.md`](docs/RELEASE.md). Do not publish tags or push to the tap without maintainer approval.
+For **macOS CI on a PR**, add the label **`ci-macos`** (weekly schedule and manual
+`workflow_dispatch` also run [macOS check](.github/workflows/macos-check.yml)).
+
+Releases and Homebrew tap updates: [`docs/RELEASE.md`](docs/RELEASE.md).
+Do not publish tags or push to the tap without maintainer approval.
 
 ## Conventional Commits
 
@@ -74,9 +79,23 @@ The `commit-msg` git hook rejects non-conforming subjects (merge commits are all
 ## Code expectations
 
 - **English** for code, comments, CLI help, and public docs.
-- Match the CLI contract in [`docs/behavior.md`](docs/behavior.md).
+- Match the CLI contract in [`docs/behavior.md`](docs/behavior.md). Usage recipes: [`docs/usage.md`](docs/usage.md).
 - Injectable seams for EventKit / Apple Events; unit tests must not require live TCC when mocks suffice.
 - No secrets, no real personal account names in tests (use `Work`, `Personal`, `Acme`).
 - Format with Apple **`swift format`** (see `mise run format`).
+
+### Coverage
+
+- Prefer keeping **Sources/macverbs** line coverage high (`mise run coverage` / `check-coverage`).
+- Default gate: **97%** lines (see `scripts/coverage.sh`, `COVERAGE_MIN`).
+- Residual ~2–3% is expected: live EventKit/osascript failure branches and process
+  entry (`Main.main`). Do not chase 100% with brittle live-only tests on CI.
+
+### Live / dogfood tests
+
+- Default unit suite is mock-first and safe for agents and CI.
+- Optional live EventKit paths in the suite no-op or skip when access is missing.
+- Do **not** commit credentials or personal mailbox names. Dogfood on your machine;
+  automated GitHub runners will not have your TCC grants.
 
 Agent-oriented notes: [`AGENTS.md`](AGENTS.md).
