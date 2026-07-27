@@ -160,14 +160,18 @@ fields to change.
 
 ### calendar
 
-| Verb | Args | Status |
-|------|------|--------|
+| Verb | Args |
+|------|------|
 | list | `--days` (default `7`) |
 | add | `title`, `--start` (required) `--end` (required) `--calendar` (optional) |
 
 Date/time forms: `YYYY-MM-DD HH:MM` (oracle-compatible).
 
 #### calendar list
+
+All-day `when` values are ISO dates. If EventKit reports end on the same
+day as start, the range is not inverted (inclusive last day is clamped).
+
 
 EventKit (no icalBuddy). Range: start of today through the end of day
 `today + --days` (oracle `eventsToday+N`). Recurring series are expanded into
@@ -220,8 +224,8 @@ Text: `created: Standup`.
 
 ### notes
 
-| Verb | Args | Status |
-|------|------|--------|
+| Verb | Args |
+|------|------|
 | list | `--folder` (default `Notes`) |
 | read | `title` |
 | create | `title`, `body`, `--folder` (default `Notes`) |
@@ -271,8 +275,8 @@ ScriptRunner), matching the oracle (no special not-found sentinel).
 
 ### mail
 
-| Verb | Args | Status |
-|------|------|--------|
+| Verb | Args |
+|------|------|
 | accounts | |
 | unread | |
 | list | `--account` (empty = all) `--limit` (default `20`) `--mailbox inbox\|archive` (default `inbox`) |
@@ -490,8 +494,8 @@ JSON compose: `{ "subject", "to", "cc" }`. Text:
 
 ### meta
 
-| Verb | Status |
-|------|--------|
+| Verb |
+|------|
 | doctor |
 | --version / --help |
 | shell completions |
