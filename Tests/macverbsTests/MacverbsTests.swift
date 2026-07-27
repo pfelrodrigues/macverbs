@@ -1217,10 +1217,10 @@ final class RecordingOsascriptProcess: OsascriptProcessLaunching, @unchecked Sen
         eventStore: StubEventStoreClient(),
         scriptRunner: StubScriptRunner(),
         automation: StubAutomationPermissionClient(),
-        version: "0.1.0"
+        version: Version.current
     )
     #expect(report.ok == false)
-    #expect(report.version == "0.1.0")
+    #expect(report.version == Version.current)
     #expect(report.backends.eventKit.kind == "stub")
     #expect(report.backends.eventKit.calendar == .unavailable)
     #expect(report.backends.eventKit.reminders == .unavailable)

@@ -1,4 +1,4 @@
-# Release checklist (v0.1.0+)
+# Release checklist (v0.1.1+)
 
 External steps require **explicit maintainer approval** (push tag, create tap, publish formula).
 
