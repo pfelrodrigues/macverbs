@@ -7,33 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+## [0.1.2] - 2026-07-26
 
-- FAQ in usage (English CLI text, no network, Linux CI scope).
-- Optional pre-push coverage gate (`git config macverbs.coveragePush true`).
-- Weekly macOS CI always uploads a coverage report artifact.
-- README demo session; GitHub Discussions + topics for discovery.
-
-### Changed
-
-- Split monolithic tests into domain files; extract shared mocks to `TestMocks.swift`.
-- Split `Mail`, `Reminders`, and EventStore sources into focused files (models / scripts / live / CLI).
-- Remove internal task-ID and “oracle” wording from code comments and user-facing messages.
+Packaging and project maturity for OSS consumers. No intentional JSON contract
+breakage vs 0.1.1.
 
 ### Added
 
 - Library target **`MacverbsCore`** with thin `macverbs` executable entry.
-- OSS community files: issue templates, Code of Conduct, CODEOWNERS, Dependabot.
-- `docs/usage.md`, Keep a Changelog, release helper `scripts/release.sh`.
+- OSS community files: issue templates, Code of Conduct, CODEOWNERS, Dependabot
+  (including security updates).
+- `docs/usage.md` (recipes + FAQ), Keep a Changelog, `scripts/release.sh`.
 - Expanded trust/security docs (TCC diagram, supply chain, non-sandboxed CLI).
 - Root help and domain `--help` discussions with examples.
-- macOS CI: SPM cache, optional coverage artifact on `workflow_dispatch`.
+- GitHub Discussions, repository topics, README demo session.
+- Optional pre-push coverage gate (`git config macverbs.coveragePush true`).
+- macOS CI: SPM cache; weekly job uploads llvm-cov summary artifact;
+  opt-in PR label `ci-macos`.
 
 ### Changed
 
-- Behavior doc framed as public contract (not internal migration notes).
+- Split monolithic tests into domain files; shared mocks in `TestMocks.swift`.
+- Split Mail, Reminders, and EventStore sources (models / scripts / live / CLI).
+- Behavior doc framed as the public contract (not internal migration notes).
 - User-facing “not wired” errors no longer reference internal task IDs.
 - `Package.resolved` is tracked for reproducible SPM resolution.
+- Linux CI documented as format-only (product is macOS-only).
 
 ## [0.1.1] - 2026-07-26
 
@@ -58,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for most paths.
 - GitHub Flow + Conventional Commits contributor docs.
 
-[Unreleased]: https://github.com/pfelrodrigues/macverbs/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/pfelrodrigues/macverbs/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/pfelrodrigues/macverbs/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/pfelrodrigues/macverbs/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/pfelrodrigues/macverbs/releases/tag/v0.1.0
