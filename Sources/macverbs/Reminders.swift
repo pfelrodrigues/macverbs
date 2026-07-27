@@ -408,12 +408,10 @@ enum LiveRemindersQuery {
         }
         let reminder = try findIncomplete(store: store, title: title, listName: listName)
         if !due.isEmpty {
-            guard let dueComponents = try ReminderFields.parseDue(due) else {
-                throw MacverbsError.domain(
-                    "invalid due '\(due)' (expected YYYY-MM-DD or YYYY-MM-DD HH:MM)"
-                )
+            // parseDue throws on invalid non-empty input; nil only for empty (handled above).
+            if let dueComponents = try ReminderFields.parseDue(due) {
+                reminder.dueDateComponents = dueComponents
             }
-            reminder.dueDateComponents = dueComponents
         }
         if !priority.isEmpty {
             reminder.priority = try ReminderFields.priorityValue(priority)

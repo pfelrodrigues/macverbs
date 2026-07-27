@@ -46,13 +46,11 @@ enum MacverbsApp {
     /// Parse and run with the given argv (no process name). Returns contract exit code.
     static func run(arguments: [String]) -> Int32 {
         var argv = arguments
-        var json = GlobalFlags.peelLeading(&argv)
+        // Leading `--json` is peeled here; root `Macverbs.json` is only for help text.
+        let json = GlobalFlags.peelLeading(&argv)
 
         do {
             var command = try Macverbs.parseAsRoot(argv)
-            if let root = command as? Macverbs, root.json {
-                json = true
-            }
             return try CLIContext.$jsonOutput.withValue(json) {
                 try command.run()
                 return ExitCodes.success
@@ -105,10 +103,9 @@ enum MacverbsApp {
 
 @main
 enum Main {
+    /// Process entry. Thin wrapper so logic lives in testable `MacverbsApp.run`.
     static func main() {
-        let code = MacverbsApp.run(
-            arguments: Array(CommandLine.arguments.dropFirst())
-        )
-        Foundation.exit(code)
+        // CommandLine + exit cannot be unit-tested without replacing the process.
+        Foundation.exit(MacverbsApp.run(arguments: Array(CommandLine.arguments.dropFirst())))
     }
 }

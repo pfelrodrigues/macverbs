@@ -114,12 +114,13 @@ ln -sf (pwd)/completions/macverbs.fish ~/.config/fish/completions/macverbs.fish
 
 ```bash
 mise trust                   # once
-mise run setup               # git hooks (swift format)
+mise run setup               # git hooks (format + conventional commits)
 mise run format
 mise run check               # format-check + build + test
 ```
 
-See **[AGENTS.md](AGENTS.md)** for contributor conventions.
+Contributions use **GitHub Flow** and **Conventional Commits**.
+See **[CONTRIBUTING.md](CONTRIBUTING.md)** (humans) and **[AGENTS.md](AGENTS.md)** (coding agents).
 
 ## CI
 

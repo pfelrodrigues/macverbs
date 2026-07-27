@@ -339,8 +339,13 @@ final class LiveEventKitBacking: EventKitBacking, @unchecked Sendable {
 
     /// Human-readable EventKit source for disambiguation in config init.
     static func describeSource(_ source: EKSource) -> String {
+        describeSource(type: source.sourceType, title: source.title)
+    }
+
+    /// Pure mapping of EventKit source type + title (unit-testable without a live store).
+    static func describeSource(type: EKSourceType, title: String) -> String {
         let typeName: String
-        switch source.sourceType {
+        switch type {
         case .local:
             typeName = "Local"
         case .exchange:
@@ -356,11 +361,11 @@ final class LiveEventKitBacking: EventKitBacking, @unchecked Sendable {
         @unknown default:
             typeName = "Other"
         }
-        let title = source.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if title.isEmpty || title.caseInsensitiveCompare(typeName) == .orderedSame {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed.caseInsensitiveCompare(typeName) == .orderedSame {
             return typeName
         }
-        return "\(typeName) · \(title)"
+        return "\(typeName) · \(trimmed)"
     }
 
     func events(from start: Date, to end: Date) throws -> [EventKitEventInfo] {

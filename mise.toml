@@ -7,7 +7,6 @@ min_version = "2025.8.0"
 [env]
 MACVERBS_ROOT = "{{config_root}}"
 MACVERBS_CONFIG_DIR = "~/.config/macverbs"
-MACVERBS_APPLE_SPEC = "~/nix/clis/apple"
 
 [tasks.resolve]
 description = "Resolve Swift package dependencies"
@@ -33,10 +32,19 @@ run = "swift format lint --configuration .swift-format --recursive --parallel --
 description = "Lint style rules (same engine as format: swift format lint)"
 run = "swift format lint --configuration .swift-format --recursive --parallel --strict Sources Tests Package.swift"
 
+[tasks.coverage]
+description = "Unit tests + llvm-cov line report (Sources/macverbs); COVERAGE_MIN=97 optional"
+run = "bash scripts/coverage.sh"
+
 [tasks.check]
 description = "Format-check/lint + build + test (agent / CI gate)"
 depends = ["format-check", "build", "test"]
 run = "echo check-ok"
+
+[tasks.check-coverage]
+description = "Full check + coverage gate (default min 97% lines on Sources)"
+depends = ["format-check", "build"]
+run = "COVERAGE_MIN=97 bash scripts/coverage.sh"
 
 [tasks.run]
 description = "Run macverbs (args after --)"
@@ -50,20 +58,12 @@ swift format --version
 git rev-parse --short HEAD 2>/dev/null || true
 """
 
-[tasks.tasks-list]
-description = "List roadmap tasks and status"
-run = "python3 scripts/tasks_status.py"
-
-[tasks.next]
-description = "Print first pending non-manual task id"
-run = "python3 scripts/tasks_status.py --next"
-
 [tasks.hooks-install]
 description = "Point this repo at .githooks (core.hooksPath)"
 run = "bash scripts/install-git-hooks.sh"
 
 [tasks.setup]
-description = "Install git hooks (swift format is on PATH via Apple toolchain)"
+description = "Install git hooks (swift format + conventional commits)"
 depends = ["hooks-install"]
 run = "echo setup-ok"
 

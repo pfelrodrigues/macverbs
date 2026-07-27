@@ -216,11 +216,17 @@ protocol OsascriptProcessLaunching: Sendable {
 /// Production launcher: `/usr/bin/osascript -e <script>`.
 struct OsascriptProcess: OsascriptProcessLaunching {
     /// Absolute path to the system osascript binary.
-    static let executablePath = "/usr/bin/osascript"
+    static let defaultExecutablePath = "/usr/bin/osascript"
+
+    /// Absolute path to the system osascript binary (overridable in tests).
+    static let executablePath = defaultExecutablePath
+
+    /// Binary used for this launcher instance (default: system osascript).
+    var executablePath: String = Self.defaultExecutablePath
 
     func launch(script: String, timeout: TimeInterval) throws -> OsascriptProcessResult {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: Self.executablePath)
+        process.executableURL = URL(fileURLWithPath: executablePath)
         process.arguments = ["-e", script]
 
         let outPipe = Pipe()
