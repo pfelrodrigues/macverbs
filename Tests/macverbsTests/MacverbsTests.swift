@@ -4915,60 +4915,8 @@ final class RecordingScriptRunner: ScriptRunner, @unchecked Sendable {
 }
 
 // MARK: - Stdio / global backend test helpers
-
-private struct StdioPipes {
-    let outRead: FileHandle
-    let errRead: FileHandle
-    let outWrite: FileHandle
-    let errWrite: FileHandle
-
-    func readOutput() throws -> String {
-        outWrite.closeFile()
-        let data = outRead.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8) ?? ""
-    }
-
-    func readError() throws -> String {
-        errWrite.closeFile()
-        let data = errRead.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8) ?? ""
-    }
-
-    func restore() {
-        CLIOutput.outFile = .standardOutput
-        CLIOutput.errFile = .standardError
-        outRead.closeFile()
-        errRead.closeFile()
-    }
-}
-
-/// Serialize process-global CLI state — Swift Testing runs cases in parallel.
-/// Covers `CLIOutput` stdio handles and `BackendClients` injection.
-private let globalCLIStateLock = NSRecursiveLock()
-
-private func withBackendClientsLock(_ body: () throws -> Void) throws {
-    globalCLIStateLock.lock()
-    defer { globalCLIStateLock.unlock() }
-    try body()
-}
-
-private func withRedirectedStdio(_ body: (StdioPipes) throws -> Void) throws {
-    globalCLIStateLock.lock()
-    defer { globalCLIStateLock.unlock() }
-
-    let outPipe = Pipe()
-    let errPipe = Pipe()
-    let pipes = StdioPipes(
-        outRead: outPipe.fileHandleForReading,
-        errRead: errPipe.fileHandleForReading,
-        outWrite: outPipe.fileHandleForWriting,
-        errWrite: errPipe.fileHandleForWriting
-    )
-    CLIOutput.outFile = pipes.outWrite
-    CLIOutput.errFile = pipes.errWrite
-    defer { pipes.restore() }
-    try body(pipes)
-}
+// Shared definitions: TestHelpers.swift (globalCLIStateLock, StdioPipes,
+// withBackendClientsLock, withRedirectedStdio).
 
 // MARK: - Config calendars init / default labels
 
