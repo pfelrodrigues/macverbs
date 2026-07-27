@@ -48,6 +48,21 @@ Tap: [pfelrodrigues/homebrew-tap](https://github.com/pfelrodrigues/homebrew-tap)
 (`brew install pfelrodrigues/tap/macverbs`). Formula copy: [`Formula/macverbs.rb`](Formula/macverbs.rb).  
 Release process: [`docs/RELEASE.md`](docs/RELEASE.md).
 
+## Calendar labels (optional)
+
+When several calendars share the same title (common with Exchange/Google), map
+EventKit UIDs to short labels in `~/.config/macverbs/calendars.json`.
+
+```bash
+macverbs calendar calendars          # list uid / title / source
+macverbs config calendars init       # write calendars.json (edit labels after)
+macverbs config calendars show
+macverbs config path
+```
+
+Duplicate titles without aliases are reported as **warnings** by `macverbs doctor`
+(non-blocking). Override config directory with `MACVERBS_CONFIG_DIR`.
+
 ## Permissions (TCC)
 
 Calendar and Reminders use **EventKit**. The first verb that needs data may

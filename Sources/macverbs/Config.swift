@@ -83,7 +83,7 @@ struct CalendarAliases: Equatable, Sendable {
 
 // MARK: - Load
 
-/// Load user config files. Missing or invalid input yields empty defaults (no crash).
+/// Load/save user config files. Missing or invalid input yields empty defaults (no crash).
 enum Config {
     /// Load calendar UID→label aliases from `calendars.json`.
     ///
@@ -124,5 +124,140 @@ enum Config {
         // If the root was an object but every value was non-string, still return
         // whatever string entries we got (possibly empty) — never throw.
         return CalendarAliases(labelsByUID: labels)
+    }
+
+    /// Encode alias map as pretty JSON with sorted keys (stable for agents/diffs).
+    static func encodeCalendarAliases(_ aliases: CalendarAliases) throws -> Data {
+        let sortedKeys = aliases.labelsByUID.keys.sorted()
+        var object: [String: String] = [:]
+        object.reserveCapacity(sortedKeys.count)
+        for key in sortedKeys {
+            object[key] = aliases.labelsByUID[key]
+        }
+        return try JSONSerialization.data(
+            withJSONObject: object,
+            options: [.prettyPrinted, .sortedKeys]
+        )
+    }
+
+    /// Write aliases to `url`, creating parent directories as needed.
+    static func writeCalendarAliases(
+        _ aliases: CalendarAliases,
+        to url: URL,
+        fileManager: FileManager = .default
+    ) throws {
+        let dir = url.deletingLastPathComponent()
+        try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        let data = try encodeCalendarAliases(aliases)
+        var payload = data
+        if let newline = "\n".data(using: .utf8) {
+            payload.append(newline)
+        }
+        do {
+            try payload.write(to: url, options: .atomic)
+        } catch {
+            throw MacverbsError.system(
+                "failed to write \(url.path): \(error.localizedDescription)"
+            )
+        }
+    }
+
+    /// Build initial UID→label map from EventKit calendars.
+    ///
+    /// Unique titles keep the title as label. Duplicate titles prefer
+    /// `Title · source` when source is non-empty; remaining collisions get
+    /// ` (2)`, ` (3)`, …
+    static func defaultLabels(for calendars: [EventKitCalendarInfo]) -> CalendarAliases {
+        var titleCounts: [String: Int] = [:]
+        for calendar in calendars {
+            titleCounts[calendar.title, default: 0] += 1
+        }
+
+        var usedLabels: [String: Int] = [:]
+        var labelsByUID: [String: String] = [:]
+        let ordered = calendars.sorted { lhs, rhs in
+            if lhs.title != rhs.title {
+                return lhs.title.localizedCaseInsensitiveCompare(rhs.title)
+                    == .orderedAscending
+            }
+            return lhs.uid < rhs.uid
+        }
+
+        for calendar in ordered {
+            let base: String
+            if titleCounts[calendar.title, default: 0] > 1 {
+                let source = calendar.source.trimmingCharacters(in: .whitespacesAndNewlines)
+                if source.isEmpty {
+                    base = calendar.title
+                } else {
+                    base = "\(calendar.title) · \(source)"
+                }
+            } else {
+                base = calendar.title
+            }
+
+            let seen = usedLabels[base, default: 0]
+            usedLabels[base] = seen + 1
+            let label: String
+            if seen == 0 {
+                label = base
+            } else {
+                label = "\(base) (\(seen + 1))"
+            }
+            labelsByUID[calendar.uid] = label
+        }
+        return CalendarAliases(labelsByUID: labelsByUID)
+    }
+
+    /// Create `calendars.json` from current EventKit calendars.
+    ///
+    /// - Parameters:
+    ///   - force: When false, refuse if the file already exists.
+    ///   - calendars: Event calendars to seed (caller loads via EventStore).
+    ///   - url: Destination file.
+    /// - Returns: Written aliases.
+    static func initCalendarAliases(
+        calendars: [EventKitCalendarInfo],
+        force: Bool,
+        url: URL = ConfigPaths.calendarsURL(),
+        fileManager: FileManager = .default
+    ) throws -> CalendarAliases {
+        if fileManager.fileExists(atPath: url.path), !force {
+            throw MacverbsError.domain(
+                "calendars.json already exists at \(url.path) (use --force to overwrite)"
+            )
+        }
+        let aliases = defaultLabels(for: calendars)
+        try writeCalendarAliases(aliases, to: url, fileManager: fileManager)
+        return aliases
+    }
+
+    /// Titles that appear on more than one event calendar.
+    static func duplicateTitles(in calendars: [EventKitCalendarInfo]) -> [String] {
+        var counts: [String: Int] = [:]
+        for calendar in calendars {
+            counts[calendar.title, default: 0] += 1
+        }
+        return
+            counts
+            .filter { $0.value > 1 }
+            .map(\.key)
+            .sorted()
+    }
+
+    /// UIDs among `calendars` that share a duplicate title and have no alias entry.
+    static func unaliasedDuplicateUIDs(
+        calendars: [EventKitCalendarInfo],
+        aliases: CalendarAliases
+    ) -> [String] {
+        let dupTitles = Set(duplicateTitles(in: calendars))
+        guard !dupTitles.isEmpty else {
+            return []
+        }
+        return
+            calendars
+            .filter { dupTitles.contains($0.title) && aliases.labelsByUID[$0.uid] == nil }
+            .map(\.uid)
+            .sorted()
     }
 }

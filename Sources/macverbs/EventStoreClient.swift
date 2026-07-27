@@ -97,6 +97,8 @@ struct EventKitCalendarInfo: Equatable, Sendable {
     var uid: String
     /// Calendar title as shown in Calendar.app.
     var title: String
+    /// Account/source description (e.g. `Exchange · Work`, `CalDAV`). Empty when unknown.
+    var source: String = ""
 }
 
 /// One event occurrence (recurring series already expanded by EventKit).
@@ -329,9 +331,36 @@ final class LiveEventKitBacking: EventKitBacking, @unchecked Sendable {
             .map { cal in
                 EventKitCalendarInfo(
                     uid: cal.calendarIdentifier,
-                    title: cal.title
+                    title: cal.title,
+                    source: Self.describeSource(cal.source)
                 )
             }
+    }
+
+    /// Human-readable EventKit source for disambiguation in config init.
+    static func describeSource(_ source: EKSource) -> String {
+        let typeName: String
+        switch source.sourceType {
+        case .local:
+            typeName = "Local"
+        case .exchange:
+            typeName = "Exchange"
+        case .calDAV:
+            typeName = "CalDAV"
+        case .mobileMe:
+            typeName = "iCloud"
+        case .subscribed:
+            typeName = "Subscribed"
+        case .birthdays:
+            typeName = "Birthdays"
+        @unknown default:
+            typeName = "Other"
+        }
+        let title = source.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if title.isEmpty || title.caseInsensitiveCompare(typeName) == .orderedSame {
+            return typeName
+        }
+        return "\(typeName) · \(title)"
     }
 
     func events(from start: Date, to end: Date) throws -> [EventKitEventInfo] {

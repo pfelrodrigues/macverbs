@@ -12,6 +12,18 @@ struct CalendarEventItem: Codable, Equatable, Sendable {
     var calendar: String
 }
 
+/// One event calendar for discovery (`calendar calendars`).
+struct CalendarInfoItem: Codable, Equatable, Sendable {
+    /// EventKit `calendarIdentifier` (key for `calendars.json`).
+    var uid: String
+    /// Title as shown in Calendar.app.
+    var title: String
+    /// Account/source description when available.
+    var source: String
+    /// Label from `calendars.json` if configured; otherwise empty.
+    var label: String
+}
+
 /// Result of `calendar add` (oracle keys: `created`, `start`, `end`).
 struct CalendarAddResult: Codable, Equatable, Sendable {
     /// Created event title.
@@ -229,6 +241,51 @@ enum CalendarService {
     static func formatAdd(_ result: CalendarAddResult) -> String {
         "created: \(result.created)"
     }
+
+    /// List event calendars with UID/title/source and optional config label.
+    static func listCalendars(
+        client: any EventStoreClient = BackendClients.eventStore,
+        aliases: CalendarAliases = Config.loadCalendarAliases()
+    ) throws -> [CalendarInfoItem] {
+        try client.ensureAccess(for: .event)
+        let calendars = try client.eventCalendars()
+        return
+            calendars
+            .sorted { lhs, rhs in
+                if lhs.title != rhs.title {
+                    return lhs.title.localizedCaseInsensitiveCompare(rhs.title)
+                        == .orderedAscending
+                }
+                return lhs.uid < rhs.uid
+            }
+            .map { cal in
+                CalendarInfoItem(
+                    uid: cal.uid,
+                    title: cal.title,
+                    source: cal.source,
+                    label: aliases.labelsByUID[cal.uid] ?? ""
+                )
+            }
+    }
+
+    static func formatCalendars(_ items: [CalendarInfoItem]) -> String {
+        if items.isEmpty {
+            return "no calendars."
+        }
+        return
+            items.map { item in
+                var line = "- \(item.title)"
+                if !item.source.isEmpty {
+                    line += " | source: \(item.source)"
+                }
+                if !item.label.isEmpty {
+                    line += " | label: \(item.label)"
+                }
+                line += " | uid: \(item.uid)"
+                return line
+            }
+            .joined(separator: "\n")
+    }
 }
 
 // MARK: - CLI
@@ -238,8 +295,25 @@ struct CalendarCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "calendar",
         abstract: "Calendar events (EventKit).",
-        subcommands: [CalendarListCommand.self, CalendarAddCommand.self]
+        subcommands: [
+            CalendarListCommand.self,
+            CalendarAddCommand.self,
+            CalendarCalendarsCommand.self,
+        ]
     )
+}
+
+/// `macverbs calendar calendars` — discover UIDs for calendars.json.
+struct CalendarCalendarsCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "calendars",
+        abstract: "List event calendars with UID (for calendars.json)."
+    )
+
+    func run() throws {
+        let items = try CalendarService.listCalendars()
+        try CLIOutput.emit(items, text: CalendarService.formatCalendars)
+    }
 }
 
 /// `macverbs calendar list [--days N]`.

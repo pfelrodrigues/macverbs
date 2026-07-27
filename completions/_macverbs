@@ -52,6 +52,7 @@ _macverbs() {
     command)
         local -ar subcommands=(
             'calendar:Calendar events (EventKit).'
+            'config:Show and initialize macverbs config (calendars.json).'
             'doctor:Report environment readiness (no permission prompts).'
             'mail:Mail accounts and messages (Apple Events).'
             'notes:Notes folders and notes (Apple Events).'
@@ -62,7 +63,7 @@ _macverbs() {
         ;;
     arg)
         case "${words[1]}" in
-        calendar|doctor|mail|notes|reminders|help)
+        calendar|config|doctor|mail|notes|reminders|help)
             "_macverbs_${words[1]}" && ret=0
             ;;
         esac
@@ -86,12 +87,13 @@ _macverbs_calendar() {
         local -ar subcommands=(
             'list:List upcoming events (recurring expanded; labels from config).'
             'add:Create a timed calendar event (EventKit).'
+            'calendars:List event calendars with UID (for calendars.json).'
         )
         _describe -V subcommand subcommands && ret=0
         ;;
     arg)
         case "${words[1]}" in
-        list|add)
+        list|add|calendars)
             "_macverbs_calendar_${words[1]}" && ret=0
             ;;
         esac
@@ -120,6 +122,109 @@ _macverbs_calendar_add() {
         '--start[Start datetime (YYYY-MM-DD HH\:MM).]:start:'
         '--end[End datetime (YYYY-MM-DD HH\:MM).]:end:'
         '--calendar[Calendar alias, title, or UID. Empty = default calendar.]:calendar:'
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_calendar_calendars() {
+    local -i ret=1
+    local -ar arg_specs=(
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_config() {
+    local -i ret=1
+    local -ar arg_specs=(
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+        '(-): :->command'
+        '(-)*:: :->arg'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+    case "${state}" in
+    command)
+        local -ar subcommands=(
+            'path:Print the resolved config directory and calendars.json path.'
+            'calendars:Manage calendars.json (UID → label map).'
+        )
+        _describe -V subcommand subcommands && ret=0
+        ;;
+    arg)
+        case "${words[1]}" in
+        path|calendars)
+            "_macverbs_config_${words[1]}" && ret=0
+            ;;
+        esac
+        ;;
+    esac
+
+    return "${ret}"
+}
+
+_macverbs_config_path() {
+    local -i ret=1
+    local -ar arg_specs=(
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_config_calendars() {
+    local -i ret=1
+    local -ar arg_specs=(
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+        '(-): :->command'
+        '(-)*:: :->arg'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+    case "${state}" in
+    command)
+        local -ar subcommands=(
+            'show:Show the current calendars.json alias map.'
+            'init:Create calendars.json from EventKit calendars (edit labels afterward).'
+        )
+        _describe -V subcommand subcommands && ret=0
+        ;;
+    arg)
+        case "${words[1]}" in
+        show|init)
+            "_macverbs_config_calendars_${words[1]}" && ret=0
+            ;;
+        esac
+        ;;
+    esac
+
+    return "${ret}"
+}
+
+_macverbs_config_calendars_show() {
+    local -i ret=1
+    local -ar arg_specs=(
+        '--version[Show the version.]'
+        '(-h --help)'{-h,--help}'[Show help information.]'
+    )
+    _arguments -w -s -S : "${arg_specs[@]}" && ret=0
+
+    return "${ret}"
+}
+
+_macverbs_config_calendars_init() {
+    local -i ret=1
+    local -ar arg_specs=(
+        '--force[Overwrite an existing calendars.json.]'
         '--version[Show the version.]'
         '(-h --help)'{-h,--help}'[Show help information.]'
     )

@@ -173,13 +173,13 @@ _macverbs() {
     unset 'unparsed_words[0]'
     unparsed_words=("${unparsed_words[@]}")
     case "${subcommand}" in
-    calendar|doctor|mail|notes|reminders|help)
+    calendar|config|doctor|mail|notes|reminders|help)
         # Offer subcommand argument completions
         "_macverbs_${subcommand}"
         ;;
     *)
         # Offer subcommand completions
-        COMPREPLY+=($(compgen -W 'calendar doctor mail notes reminders help' -- "${cur}"))
+        COMPREPLY+=($(compgen -W 'calendar config doctor mail notes reminders help' -- "${cur}"))
         ;;
     esac
 }
@@ -196,13 +196,13 @@ _macverbs_calendar() {
     unset 'unparsed_words[0]'
     unparsed_words=("${unparsed_words[@]}")
     case "${subcommand}" in
-    list|add)
+    list|add|calendars)
         # Offer subcommand argument completions
         "_macverbs_calendar_${subcommand}"
         ;;
     *)
         # Offer subcommand completions
-        COMPREPLY+=($(compgen -W 'list add' -- "${cur}"))
+        COMPREPLY+=($(compgen -W 'list add calendars' -- "${cur}"))
         ;;
     esac
 }
@@ -241,6 +241,84 @@ _macverbs_calendar_add() {
         return
         ;;
     esac
+}
+
+_macverbs_calendar_calendars() {
+    repeating_flags=()
+    non_repeating_flags=(--version -h --help)
+    repeating_options=()
+    non_repeating_options=()
+    __macverbs_offer_flags_options 0
+}
+
+_macverbs_config() {
+    repeating_flags=()
+    non_repeating_flags=(--version -h --help)
+    repeating_options=()
+    non_repeating_options=()
+    __macverbs_offer_flags_options 0
+
+    # Offer subcommand / subcommand argument completions
+    local -r subcommand="${unparsed_words[0]}"
+    unset 'unparsed_words[0]'
+    unparsed_words=("${unparsed_words[@]}")
+    case "${subcommand}" in
+    path|calendars)
+        # Offer subcommand argument completions
+        "_macverbs_config_${subcommand}"
+        ;;
+    *)
+        # Offer subcommand completions
+        COMPREPLY+=($(compgen -W 'path calendars' -- "${cur}"))
+        ;;
+    esac
+}
+
+_macverbs_config_path() {
+    repeating_flags=()
+    non_repeating_flags=(--version -h --help)
+    repeating_options=()
+    non_repeating_options=()
+    __macverbs_offer_flags_options 0
+}
+
+_macverbs_config_calendars() {
+    repeating_flags=()
+    non_repeating_flags=(--version -h --help)
+    repeating_options=()
+    non_repeating_options=()
+    __macverbs_offer_flags_options 0
+
+    # Offer subcommand / subcommand argument completions
+    local -r subcommand="${unparsed_words[0]}"
+    unset 'unparsed_words[0]'
+    unparsed_words=("${unparsed_words[@]}")
+    case "${subcommand}" in
+    show|init)
+        # Offer subcommand argument completions
+        "_macverbs_config_calendars_${subcommand}"
+        ;;
+    *)
+        # Offer subcommand completions
+        COMPREPLY+=($(compgen -W 'show init' -- "${cur}"))
+        ;;
+    esac
+}
+
+_macverbs_config_calendars_show() {
+    repeating_flags=()
+    non_repeating_flags=(--version -h --help)
+    repeating_options=()
+    non_repeating_options=()
+    __macverbs_offer_flags_options 0
+}
+
+_macverbs_config_calendars_init() {
+    repeating_flags=()
+    non_repeating_flags=(--force --version -h --help)
+    repeating_options=()
+    non_repeating_options=()
+    __macverbs_offer_flags_options 0
 }
 
 _macverbs_doctor() {

@@ -13,6 +13,8 @@ struct DoctorReport: Codable, Equatable, Sendable {
     var backends: DoctorBackends
     /// Human-readable gaps with System Settings hints (empty when fully ready).
     var missing: [String]
+    /// Non-blocking advisories (e.g. calendars.json setup). Does not affect `ok`.
+    var warnings: [String] = []
 }
 
 struct DoctorBackends: Codable, Equatable, Sendable {
@@ -46,6 +48,7 @@ enum Doctor {
         eventStore: any EventStoreClient = BackendClients.eventStore,
         scriptRunner: any ScriptRunner = BackendClients.scriptRunner,
         automation: any AutomationPermissionClient = BackendClients.automation,
+        aliases: CalendarAliases = Config.loadCalendarAliases(),
         version: String = Version.current
     ) -> DoctorReport {
         let calendar = eventStore.authorizationStatus(for: .event)
@@ -86,6 +89,14 @@ enum Doctor {
             appendAutomationGaps(target: .notes, status: notesStatus, into: &missing)
         }
 
+        var warnings: [String] = []
+        appendCalendarAliasWarnings(
+            eventStore: eventStore,
+            calendarStatus: calendar,
+            aliases: aliases,
+            into: &warnings
+        )
+
         let backends = DoctorBackends(
             eventKit: DoctorEventKitBackend(
                 kind: eventKitKind,
@@ -104,7 +115,8 @@ enum Doctor {
             version: version,
             ok: missing.isEmpty,
             backends: backends,
-            missing: missing
+            missing: missing,
+            warnings: warnings
         )
     }
 
@@ -126,7 +138,41 @@ enum Doctor {
                 lines.append("  - \(item)")
             }
         }
+        if !report.warnings.isEmpty {
+            lines.append("warnings:")
+            for item in report.warnings {
+                lines.append("  - \(item)")
+            }
+        }
         return lines.joined(separator: "\n")
+    }
+
+    /// Non-blocking calendars.json / duplicate-title advisories.
+    private static func appendCalendarAliasWarnings(
+        eventStore: any EventStoreClient,
+        calendarStatus: EventAuthorizationStatus,
+        aliases: CalendarAliases,
+        into warnings: inout [String]
+    ) {
+        guard calendarStatus.allowsFullAccess else {
+            return
+        }
+        let calendars: [EventKitCalendarInfo]
+        do {
+            calendars = try eventStore.eventCalendars()
+        } catch {
+            return
+        }
+        let unaliased = Config.unaliasedDuplicateUIDs(
+            calendars: calendars,
+            aliases: aliases
+        )
+        if !unaliased.isEmpty {
+            let dupTitles = Config.duplicateTitles(in: calendars).joined(separator: ", ")
+            warnings.append(
+                "\(unaliased.count) calendar(s) share title(s) [\(dupTitles)] without calendars.json aliases — run: macverbs config calendars init"
+            )
+        }
     }
 
     // MARK: Gap messages (actionable System Settings paths)
