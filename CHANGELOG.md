@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Split monolithic tests into domain files; extract shared mocks to `TestMocks.swift`.
+- Split `Mail`, `Reminders`, and EventStore sources into focused files (models / scripts / live / CLI).
+- Remove internal task-ID and “oracle” wording from code comments and user-facing messages.
+
 ### Added
 
 - Library target **`MacverbsCore`** with thin `macverbs` executable entry.
