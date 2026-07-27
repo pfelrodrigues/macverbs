@@ -1,9 +1,6 @@
 # Behavior contract
 
-Target UX and JSON shapes for agents. While porting, the **oracle** is the
-Python CLI:
-
-`~/nix/clis/apple` (env `MACVERBS_APPLE_SPEC`)
+Target UX and JSON shapes for agents and scripts.
 
 Do not paste proprietary account names into examples. Use `Work`, `Personal`, `Acme`.
 

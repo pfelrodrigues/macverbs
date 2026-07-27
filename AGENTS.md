@@ -2,17 +2,17 @@
 
 Agent-first CLI for **macOS Mail, Reminders, Notes, and Calendar**.
 
-Maintainer: [pfelrodrigues](https://github.com/pfelrodrigues). Product name is **macverbs** (not a personal dump of private configs).
+Maintainer: [pfelrodrigues](https://github.com/pfelrodrigues). Product name is **macverbs**.
 
 ## Read first
 
 | Doc | Why |
 |-----|-----|
-| `docs/ROADMAP.md` | Index of work; how to run the loop |
-| `docs/tasks/T*.md` | One task = one workflow cycle; frontmatter `status` |
-| `docs/behavior.md` | CLI/JSON contract |
-| `README.md` | Public pitch and status |
-| `~/nix/clis/apple` | Behavior **oracle** (Python) while porting — env `MACVERBS_APPLE_SPEC` |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | **GitHub Flow** + Conventional Commits (source of truth for process) |
+| [`docs/behavior.md`](docs/behavior.md) | CLI / JSON contract |
+| [`README.md`](README.md) | Public pitch, install, permissions |
+| [`docs/RELEASE.md`](docs/RELEASE.md) | Version + Homebrew release steps |
+| [`SECURITY.md`](SECURITY.md) | Vulnerability reporting |
 
 ## Architecture (do not fight this)
 
@@ -24,65 +24,48 @@ Mail + Notes          →  Apple Events (osascript / NSAppleScript)
 - One binary, two backends. **Not** EventKit-only (Mail/Notes have no public EventKit API).
 - **No icalBuddy** dependency — calendar listing is EventKit.
 - Test seams: `EventStoreClient`, `ScriptRunner` (inject mocks; unit tests must not require live TCC).
-- Side effects that touch mail/reminders must be **verifiable** (e.g. re-count after archive). Never report success on silent no-ops. Gmail archive via Mail scripting is **unsupported** — refuse honestly.
+- Side effects that touch mail/reminders must be **verifiable**. Never report success on silent no-ops. Gmail archive via Mail scripting is **unsupported** — refuse honestly.
 
 ## Tooling (mise)
 
-Project is isolated with **mise**. From repo root:
-
 ```bash
 mise trust          # once, if prompted
-mise run setup      # git hooks → .githooks/
-mise run tasks-list
-mise run next
-mise run format     # Apple `swift format` (write)
+mise run setup      # git hooks → .githooks/ (format + conventional commits)
+mise run format
 mise run format-check
-mise run lint       # same engine, lint --strict
+mise run lint
 mise run build
 mise run test
+mise run coverage   # optional line coverage report
 mise run check      # format-check + build + test (done gate)
 mise run run -- --help
 ```
 
 | Tool | Role | Config |
 |------|------|--------|
-| **`swift format`** | format + lint (official Apple toolchain) | `.swift-format` |
-| **git hooks** | pre-commit format staged + lint strict | `.githooks/` via `mise run hooks-install` |
+| **`swift format`** | format + lint (Apple toolchain) | `.swift-format` |
+| **git hooks** | pre-commit format; commit-msg Conventional Commits | `.githooks/` |
 
-- Prefer `mise run …` over bare `swift …` so env is consistent.
-- Compiler and `swift format` come from **Apple CLT/Xcode** on PATH (no third-party SwiftFormat/SwiftLint required).
-- Config dir: `MACVERBS_CONFIG_DIR` (default `~/.config/macverbs`). Never commit personal calendar UIDs or account names (Vert, PYO, …).
-- Before claiming a task done: **`mise run check` must pass** (includes format/lint).
-- **GitHub CI:** Linux job on every push (format only). Full macOS build+test is **manual** (`macos-check` workflow) — do not assume Actions validates EventKit/Mail. Prefer local `mise run check`.
+Prefer `mise run …` over bare `swift …`. Config dir: `MACVERBS_CONFIG_DIR` (default `~/.config/macverbs`). Never commit personal calendar UIDs or account names.
 
-## Workflow loop
+**GitHub CI:** Linux job on every push/PR (format only). Full macOS build+test is **manual** (`macos-check` workflow). Prefer local `mise run check`.
 
-Registered workflow: **`implement-task`** (`.grok/workflows/implement-task.rhai`).
+## Workflow (GitHub Flow)
 
-```text
-args.task = "T01"   # explicit
-args.task = "next"  # first pending non-manual
-```
-
-Each cycle: load task → implement only that task → `mise run check` → review → set task `status: done` if green.
-
-**Manual tasks** (`manual: true` in frontmatter): T12, T19 — do not auto-complete; pause for the human.
+1. `git checkout main && git pull --rebase`
+2. `git checkout -b feat/<topic>` (or `fix|docs|test|chore|ci|refactor/…`)
+3. Implement a **focused** change set
+4. `mise run check`
+5. Commit with Conventional Commits (hook enforces subject shape)
+6. Push branch and open a **PR into `main`**
+7. Do **not** push tags, Homebrew tap changes, or other publish steps without asking the maintainer
 
 ## Implementation rules
 
-1. **One task per change set.** Do not start T0N+1 inside T0N.
-2. **Honor `depends`.** If a dependency is not `status: done`, stop and report.
-3. **Parity over invention.** Match `apple` verb names and flag shapes unless `docs/behavior.md` says otherwise.
-4. **English** for public code, comments, and user-facing CLI help. Task docs may stay bilingual as they are.
-5. **No secrets** in repo. No real mailbox names from the maintainer’s machine in tests — use fixtures (`Work`, `Personal`, `Acme`).
-6. **Commits:** Conventional Commits style welcome (`feat:`, `fix:`, `docs:`, `test:`). No AI co-author trailers.
-7. **External publish** (Homebrew tap push, GitHub release): implement locally, then **ask the user** before any network publish.
-8. **Not in scope:** WhatsApp, Teams, SharePoint, TFS, Jamie, Graph, private SQLite hacks, automatic email send.
-
-## Related (not this repo)
-
-- [macos-verbs](https://github.com/chaoz23/macos-verbs) — system actions (focus, clipboard). Different product; binary `verbs`.
-
-## Done means
-
-For automated tasks: frontmatter `status: done`, checkboxes in the task file ticked, `mise run check` passes, and behavior notes updated if a verb landed.
+1. **One concern per PR** when practical (reviewable diff).
+2. **Parity over invention.** Match established verb names and flag shapes unless `docs/behavior.md` says otherwise.
+3. **English** for public code, comments, and user-facing CLI help.
+4. **No secrets** in repo. Fixtures only: `Work`, `Personal`, `Acme`.
+5. **Commits:** Conventional Commits required. No AI co-author trailers.
+6. **External publish** (tap push, GitHub release): prepare locally, **ask before** any network publish.
+7. **Not in scope:** WhatsApp, Teams, SharePoint, TFS, Jamie, Graph, private SQLite hacks, automatic email send.

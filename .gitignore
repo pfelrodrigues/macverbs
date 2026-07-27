@@ -76,5 +76,6 @@ mise.local.toml
 
 # agent / local
 .config-local/
+.grok/
 *.swp
 .DS_Store
