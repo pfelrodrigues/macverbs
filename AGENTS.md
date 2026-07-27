@@ -9,8 +9,10 @@ Maintainer: [pfelrodrigues](https://github.com/pfelrodrigues). Product name is *
 | Doc | Why |
 |-----|-----|
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | **GitHub Flow** + Conventional Commits (source of truth for process) |
+| [`docs/usage.md`](docs/usage.md) | Recipes (first run, domains, agents) |
 | [`docs/behavior.md`](docs/behavior.md) | CLI / JSON contract |
 | [`README.md`](README.md) | Public pitch, install, permissions |
+| [`CHANGELOG.md`](CHANGELOG.md) | Released changes |
 | [`docs/RELEASE.md`](docs/RELEASE.md) | Version + Homebrew release steps |
 | [`SECURITY.md`](SECURITY.md) | Vulnerability reporting |
 
@@ -36,8 +38,9 @@ mise run format-check
 mise run lint
 mise run build
 mise run test
-mise run coverage   # optional line coverage report
-mise run check      # format-check + build + test (done gate)
+mise run coverage        # optional line coverage report
+mise run check-coverage  # coverage gate (default min 97%)
+mise run check           # format-check + build + test (done gate)
 mise run run -- --help
 ```
 

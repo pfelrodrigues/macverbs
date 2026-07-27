@@ -1,51 +1,70 @@
-# Release checklist (v0.1.1+)
+# Release checklist
 
-External steps require **explicit maintainer approval** (push tag, create tap, publish formula).
+External steps (tag push, GitHub release, tap formula) require **explicit
+maintainer approval** unless the maintainer is doing the release themselves.
+
+## Versioning policy
+
+| Band | When |
+|------|------|
+| **0.1.x** | Bug fixes, docs, small DX while dogfood runs alongside legacy tools |
+| **0.2.0** | Maintainer dogfood stable; ready to treat macverbs as the primary CLI |
+| **≥1.0** | Stable JSON contract commitment (breaking changes need major bump) |
+
+Bump `Version.current` in `Sources/macverbs/Macverbs.swift` in the same PR as
+the release. Keep [`CHANGELOG.md`](../CHANGELOG.md) updated under
+`## [Unreleased]` then move notes into the version section at tag time.
 
 ## 1. Local gate
 
 ```bash
 mise run check
-.build/release/macverbs --version   # after: swift build -c release
+# optional higher bar:
+mise run check-coverage   # COVERAGE_MIN=97 by default
+swift build -c release
+.build/release/macverbs --version
 ```
 
-## 2. Tag (GitHub)
+Optional: run the **macOS check** workflow (`workflow_dispatch` or wait for the
+weekly schedule) before tagging.
+
+## 2. Tag and GitHub release
 
 ```bash
-git tag -a v0.1.0 -m "macverbs 0.1.0"
-# only after approval:
-git push origin v0.1.0
-gh release create v0.1.0 --generate-notes
+git checkout main && git pull --rebase
+git tag -a v0.1.2 -m "macverbs 0.1.2"
+git push origin v0.1.2
+gh release create v0.1.2 --generate-notes
 ```
 
-## 3. Formula archive checksum
+## 3. Formula checksum
 
 ```bash
-curl -sL "https://github.com/pfelrodrigues/macverbs/archive/refs/tags/v0.1.0.tar.gz" | shasum -a 256
+curl -sL "https://github.com/pfelrodrigues/macverbs/archive/refs/tags/v0.1.2.tar.gz" \
+  | shasum -a 256
 ```
 
-Update `Formula/macverbs.rb`: `url` → tag archive, set `sha256`, set `version "0.1.0"`.
+Update `Formula/macverbs.rb` in this repo: `url`, `sha256`, `version`, and the
+`test do` version assertion. Open a PR, merge on green.
 
 ## 4. Homebrew tap
 
 Canonical tap: **`pfelrodrigues/homebrew-tap`**  
-Install path: **`brew install pfelrodrigues/tap/macverbs`**
+Install: **`brew install pfelrodrigues/tap/macverbs`** (or `brew install macverbs`
+after `brew tap pfelrodrigues/tap`).
 
-```bash
-# after approval — update formula on the tap (repo already exists)
-git clone https://github.com/pfelrodrigues/homebrew-tap.git
-# edit Formula/macverbs.rb (url, sha256, version), commit, push
-```
+Copy the formula into the tap repo, commit, push `main`.
 
 ## 5. Install verify
 
 ```bash
-brew install pfelrodrigues/tap/macverbs
+brew update
+brew upgrade macverbs   # or reinstall
 macverbs --version
 macverbs doctor
 ```
 
-## 6. Close roadmap tasks
+## 6. homebrew-core (later)
 
-- T23: tag + formula + post-install version
-- T25: README install section (no “scaffold only”)
+Not required for personal tap users. Track as a separate effort after 0.2+
+and a stable install base.

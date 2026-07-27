@@ -1,15 +1,19 @@
 # macverbs
 
+[![CI](https://github.com/pfelrodrigues/macverbs/actions/workflows/ci.yml/badge.svg)](https://github.com/pfelrodrigues/macverbs/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Homebrew](https://img.shields.io/badge/homebrew-pfelrodrigues%2Ftap-orange)](https://github.com/pfelrodrigues/homebrew-tap)
+
 Agent-first CLI for **macOS Mail, Reminders, Notes, and Calendar**.
 
-Stable JSON verbs for coding agents and shell scripts.
+Stable JSON verbs for coding agents and shell scripts. Human text when you omit `--json`.
 
-## Goals
+## Why
 
-- **Reliable** — honest results (no silent no-ops); multi-account Mail quirks documented
-- **Testable** — pure command layer with injectable backends; unit tests without live apps
-- **Fast where it matters** — EventKit for Calendar and Reminders
-- **Safe** — least privilege, clear TCC/automation prompts, no surprise network calls
+- **Honest results** — no silent no-ops (e.g. Gmail “archive” is refused, not faked)
+- **Agent-friendly** — `--json` before the subcommand; errors on stderr; predictable exit codes
+- **Fast where it matters** — EventKit for Calendar and Reminders (no icalBuddy)
+- **Testable** — injectable backends; unit tests without live TCC for most paths
 
 ## Architecture
 
@@ -18,120 +22,122 @@ Stable JSON verbs for coding agents and shell scripts.
 | Calendar, Reminders | EventKit |
 | Mail, Notes | Apple Events (Open Scripting Architecture) |
 
-One binary, two backends. Mail and Notes have no public EventKit surface, so they use Apple Events.
+One binary, two backends. Mail and Notes have no public EventKit surface.
 
 ## Install
 
-### From source (today)
+### Homebrew (recommended)
 
-Requires macOS with Swift (Xcode or Command Line Tools) and [mise](https://mise.jdx.dev/) optional for project tasks.
+```bash
+brew install pfelrodrigues/tap/macverbs
+# after: brew tap pfelrodrigues/tap
+#        brew install macverbs
+macverbs --version
+macverbs doctor
+```
+
+Tap: [pfelrodrigues/homebrew-tap](https://github.com/pfelrodrigues/homebrew-tap).  
+Formula copy in-repo: [`Formula/macverbs.rb`](Formula/macverbs.rb).  
+Releases: [`docs/RELEASE.md`](docs/RELEASE.md) · [`CHANGELOG.md`](CHANGELOG.md).
+
+### From source
+
+Requires macOS with Swift (Xcode or Command Line Tools). [mise](https://mise.jdx.dev/) is optional for project tasks.
 
 ```bash
 git clone https://github.com/pfelrodrigues/macverbs.git
 cd macverbs
 swift build -c release
-# binary: .build/release/macverbs
 cp .build/release/macverbs /usr/local/bin/   # or any dir on PATH
-macverbs --version
 macverbs doctor
 ```
 
-### Homebrew
+## First run
 
 ```bash
-brew install pfelrodrigues/tap/macverbs
-macverbs --version
 macverbs doctor
+macverbs calendar calendars              # UIDs / titles / sources
+macverbs config calendars init           # optional ~/.config/macverbs/calendars.json
+# edit labels if several calendars share the same title
+macverbs --json calendar list --days 7
 ```
 
-Tap: [pfelrodrigues/homebrew-tap](https://github.com/pfelrodrigues/homebrew-tap)  
-(`brew install pfelrodrigues/tap/macverbs`). Formula copy: [`Formula/macverbs.rb`](Formula/macverbs.rb).  
-Release process: [`docs/RELEASE.md`](docs/RELEASE.md).
+More recipes: **[`docs/usage.md`](docs/usage.md)**. JSON contract: **[`docs/behavior.md`](docs/behavior.md)**.
 
-## Calendar labels (optional)
+## Commands (overview)
 
-When several calendars share the same title (common with Exchange/Google), map
-EventKit UIDs to short labels in `~/.config/macverbs/calendars.json`.
-
-```bash
-macverbs calendar calendars          # list uid / title / source
-macverbs config calendars init       # write calendars.json (edit labels after)
-macverbs config calendars show
-macverbs config path
-```
-
-Duplicate titles without aliases are reported as **warnings** by `macverbs doctor`
-(non-blocking). Override config directory with `MACVERBS_CONFIG_DIR`.
-
-## Permissions (TCC)
-
-Calendar and Reminders use **EventKit**. The first verb that needs data may
-prompt once per entity type. Afterward:
-
-- **System Settings → Privacy & Security → Calendars**
-- **System Settings → Privacy & Security → Reminders**
-
-`macverbs doctor` reports authorization **without** prompting (EventKit +
-Automation for Mail/Notes). Denied access yields domain errors (exit 1) with
-Settings paths.
-
-Mail and Notes use **Apple Events** (Automation):
-
-- **System Settings → Privacy & Security → Automation**
-
-## Usage (sketch)
+| Domain | Verbs |
+|--------|--------|
+| `calendar` | `list`, `add`, `calendars` |
+| `reminders` | `lists`, `list`, `add`, `done`, `move`, `edit`, `mklist`, `delete` |
+| `mail` | `accounts`, `unread`, `list`, `read`, `archive`, `delete`, `attachments`, `draft`, `compose` |
+| `notes` | `list`, `read`, `create`, `search` |
+| `config` | `path`, `calendars show\|init` |
+| `doctor` | (no subcommand) |
 
 ```bash
 macverbs --json calendar list --days 7
 macverbs reminders list --list Inbox
 macverbs --json mail list --limit 20
-macverbs mail read '<message-id>' --account Work
+macverbs mail read 'message-id-from-list' --account Work
 macverbs notes search "meeting"
 macverbs doctor
 ```
 
-Global: `--json` **before** the subcommand. Exit codes: `0` ok, `1` domain,
-`2` system, `64` usage. Errors on stderr; successful JSON on stdout.
+Global: `--json` **before** the subcommand. Exit: `0` ok, `1` domain, `2` system, `64` usage.
+
+## Permissions (TCC)
+
+| Domain | Settings |
+|--------|----------|
+| Calendar / Reminders | **Privacy & Security → Calendars / Reminders** |
+| Mail / Notes | **Privacy & Security → Automation** (Terminal or agent host → Mail/Notes) |
+
+`macverbs doctor` reports status **without** prompting.
+
+## Calendar labels
+
+When several calendars share a title, map UIDs → short labels in
+`~/.config/macverbs/calendars.json` (`MACVERBS_CONFIG_DIR` overrides the config root).
+
+```bash
+macverbs calendar calendars
+macverbs config calendars init
+macverbs config calendars show
+macverbs config path
+```
+
+`doctor` warns (non-blocking) about duplicate titles still without aliases.
 
 ## Shell completions
 
-Scripts for **fish**, **zsh**, and **bash** live under [`completions/`](completions/).
-Regenerate after CLI changes: `mise run generate-completions` (or
-`macverbs --generate-completion-script fish`).
-
-```fish
-# fish
-mkdir -p ~/.config/fish/completions
-ln -sf (pwd)/completions/macverbs.fish ~/.config/fish/completions/macverbs.fish
-```
-
-```bash
-# zsh — put completions/_macverbs on fpath, then compinit
-# bash — source completions/macverbs.bash from bashrc
-```
+Installed by Homebrew. From source: `mise run generate-completions` or
+`macverbs --generate-completion-script fish|zsh|bash`. Files under [`completions/`](completions/).
 
 ## Develop
 
 ```bash
-mise trust                   # once
+mise trust
 mise run setup               # git hooks (format + conventional commits)
-mise run format
 mise run check               # format-check + build + test
+mise run coverage            # optional line coverage (Sources/)
+mise run check-coverage      # coverage gate (default min 97%)
 ```
 
-Contributions use **GitHub Flow** and **Conventional Commits**.
-See **[CONTRIBUTING.md](CONTRIBUTING.md)** (humans) and **[AGENTS.md](AGENTS.md)** (coding agents).
+Contributions: **[CONTRIBUTING.md](CONTRIBUTING.md)** · agents: **[AGENTS.md](AGENTS.md)**.
 
 ## CI
 
-| Workflow | When | Runner | What |
-|----------|------|--------|------|
-| **CI** | push/PR → `main` | **Linux** | `swift format lint` only |
-| **macOS check** | **manual** | macOS | format + build + test |
+| Workflow | When | What |
+|----------|------|------|
+| [CI](.github/workflows/ci.yml) | push/PR → `main` | Linux `swift format lint` |
+| [macOS check](.github/workflows/macos-check.yml) | weekly schedule, `workflow_dispatch`, or PR label **`ci-macos`** | format + build + test on macOS |
+
+Local Mac remains the primary gate (`mise run check`).
 
 ## Security
 
-See [SECURITY.md](SECURITY.md) for how to report vulnerabilities.
+See [SECURITY.md](SECURITY.md).
 
 ## License
 

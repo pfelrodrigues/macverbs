@@ -39,18 +39,18 @@ Help (`-h` / `--help`) and `--version` write to stdout and exit 0. Usage failure
 
 ### reminders
 
-| Verb | Args (summary) | Status |
-|------|----------------|--------|
-| lists | | **done** (T09) |
-| list | `--list` (optional; empty = all lists) | **done** (T09) |
-| add | `title`, `--list` `--due` `--notes` `--priority high\|medium\|low` | **done** (T10) |
-| done | `title`, `--list` | **done** (T10) |
-| move | `title`, `--from` (required) `--to` (required) | **done** (T11) |
-| edit | `title`, `--list` `--due` `--priority high\|medium\|low\|none` `--notes` | **done** (T11) |
-| mklist | `name` (idempotent: ensure list exists) | **done** (T11) |
-| delete | `title`, `--list` (delete without completing) | **done** (T10) |
+| Verb | Args (summary) |
+|------|----------------|
+| lists | |
+| list | `--list` (optional; empty = all lists) |
+| add | `title`, `--list` `--due` `--notes` `--priority high\|medium\|low` |
+| done | `title`, `--list` |
+| move | `title`, `--from` (required) `--to` (required) |
+| edit | `title`, `--list` `--due` `--priority high\|medium\|low\|none` `--notes` |
+| mklist | `name` (idempotent: ensure list exists) |
+| delete | `title`, `--list` (delete without completing) |
 
-#### reminders lists / list (T09)
+#### reminders lists / list
 
 EventKit (no AppleScript). `reminders lists` returns each list with its
 incomplete count. `reminders list` returns incomplete items; `--list` filters
@@ -85,7 +85,7 @@ keys). Text: `- title | list: … | due: … | priority: … | notes: …`.
 ```
 
 
-#### reminders add / done / delete (T10)
+#### reminders add / done / delete
 
 EventKit mutations. Match for `done` / `delete` is **exact title** within the
 resolved list (incomplete only). Empty `--list` uses the default list for new
@@ -120,7 +120,7 @@ Exit 1 when list or reminder is missing, or due/priority is invalid.
 }
 ```
 
-#### reminders move / edit / mklist (T11)
+#### reminders move / edit / mklist
 
 EventKit mutations. `move` requires `--from` and `--to` (exact list titles);
 matches the first incomplete reminder with exact title in the source list and
@@ -162,12 +162,12 @@ fields to change.
 
 | Verb | Args | Status |
 |------|------|--------|
-| list | `--days` (default `7`) | **done** (T07) |
-| add | `title`, `--start` (required) `--end` (required) `--calendar` (optional) | **done** (T08) |
+| list | `--days` (default `7`) |
+| add | `title`, `--start` (required) `--end` (required) `--calendar` (optional) |
 
 Date/time forms: `YYYY-MM-DD HH:MM` (oracle-compatible).
 
-#### calendar list (T07)
+#### calendar list
 
 EventKit (no icalBuddy). Range: start of today through the end of day
 `today + --days` (oracle `eventsToday+N`). Recurring series are expanded into
@@ -196,7 +196,7 @@ Text: one line per event `- title | when | calendar`, or `no events.` when empty
 Exit 1 when Calendar access is denied / restricted / write-only / not granted
 (after a request). Exit 2 on EventKit system failure.
 
-#### calendar add (T08)
+#### calendar add
 
 EventKit (no AppleScript). Creates a timed event with required `--start` and
 `--end` (`YYYY-MM-DD HH:MM`). Optional `--calendar` resolves in order: config
@@ -222,12 +222,12 @@ Text: `created: Standup`.
 
 | Verb | Args | Status |
 |------|------|--------|
-| list | `--folder` (default `Notes`) | **done** (T20) |
-| read | `title` | **done** (T20) |
-| create | `title`, `body`, `--folder` (default `Notes`) | **done** (T20) |
-| search | `query` | **done** (T20) |
+| list | `--folder` (default `Notes`) |
+| read | `title` |
+| create | `title`, `body`, `--folder` (default `Notes`) |
+| search | `query` |
 
-#### notes list / read / create / search (T20)
+#### notes list / read / create / search
 
 Apple Events via Notes.app (`ScriptRunner`). `--folder` defaults to `Notes`
 (the default Notes folder name). List is scoped to that folder; search scans
@@ -273,18 +273,18 @@ ScriptRunner), matching the oracle (no special not-found sentinel).
 
 | Verb | Args | Status |
 |------|------|--------|
-| accounts | | **done** (T14) |
-| unread | | **done** (T14) |
-| list | `--account` (empty = all) `--limit` (default `20`) `--mailbox inbox\|archive` (default `inbox`) | **done** (T15) |
-| read | `message-id`, `--account` | **done** (T15) |
-| archive | `ids…`, `--account` (required); **Gmail → unsupported** (honest refuse) | **done** (T16) |
-| delete | `ids…`, `--account` (required) | **done** (T16) |
-| attachments | `message-id`, `--dest` (required), `--account` | **done** (T17) |
-| draft | `message-id`, `--body-file` (required), `--attach`… (repeatable), `--account`; **never send** | **done** (T18) |
-| compose | `--subject` `--body-file` (required) `--to`… `--cc`… `--account`; **never send** | **done** (T18) |
+| accounts | |
+| unread | |
+| list | `--account` (empty = all) `--limit` (default `20`) `--mailbox inbox\|archive` (default `inbox`) |
+| read | `message-id`, `--account` |
+| archive | `ids…`, `--account` (required); **Gmail → unsupported** (honest refuse) |
+| delete | `ids…`, `--account` (required) |
+| attachments | `message-id`, `--dest` (required), `--account` |
+| draft | `message-id`, `--body-file` (required), `--attach`… (repeatable), `--account`; **never send** |
+| compose | `--subject` `--body-file` (required) `--to`… `--cc`… `--account`; **never send** |
 
 
-#### mail accounts (T14)
+#### mail accounts
 
 Lists Mail.app accounts via Apple Events (`ScriptRunner`). No flags.
 
@@ -301,7 +301,7 @@ JSON: array of `{ "name", "type", "email" }` (stable keys). Text:
 ]
 ```
 
-#### mail unread (T14)
+#### mail unread
 
 Per-account unread totals (sum of mailbox `unread count`). Accounts with zero
 unread are omitted by the script (oracle parity).
@@ -318,7 +318,7 @@ JSON: array of `{ "account", "unread" }` with `unread` as integer. Text:
 ]
 ```
 
-#### mail list (T15)
+#### mail list
 
 Recent messages via Apple Events. Empty `--account` scans all accounts.
 `--mailbox inbox` (default) or `archive`. Resolves the box by ordered name
@@ -335,7 +335,7 @@ JSON: array of `{ "account", "date", "id", "read", "sender", "subject" }`
   {
     "account": "Work",
     "date": "Saturday, July 5, 2026 at 10:00:00 AM",
-    "id": "<msg1@example.com>",
+    "id": "msg1@example.com",
     "read": "unread",
     "sender": "Alice <alice@example.com>",
     "subject": "Standup notes"
@@ -343,9 +343,9 @@ JSON: array of `{ "account", "date", "id", "read", "sender", "subject" }`
 ]
 ```
 
-#### mail read (T15)
+#### mail read
 
-Fetch one message by Message-ID (value from `mail list`). Optional
+Fetch one message by Message-ID (value from `mail list`, as returned — do not wrap in `<>` unless present). Optional
 `--account` narrows the search. Searches inbox **and** archive candidates
 (treated/replied mail is often already archived). Returns a multi-line body
 with From/Subject/Date lines plus content (oracle header labels kept for
@@ -359,7 +359,7 @@ JSON: `{ "body": "…" }`. Text: the body string (or `(empty)` when blank).
 }
 ```
 
-#### mail archive / delete (T16)
+#### mail archive / delete
 
 Move messages from the account inbox to archive (`archive`) or trash
 (`delete`), then **re-count** how many of the requested message-ids remain in
@@ -406,7 +406,7 @@ sync brings it back. Refuse with `moved: 0`, `remaining == requested`, and an
 }
 ```
 
-#### mail attachments (T17)
+#### mail attachments
 
 Save every attachment of a message into `--dest` (required directory path).
 Optional `--account` narrows the search. Looks in inbox **and** archive
@@ -420,7 +420,7 @@ file names. Text: `saved to <dest>:` plus `- name` lines, or `no attachments.`
 ```json
 {
   "dest_dir": "/tmp/dest",
-  "message_id": "<msg1@example.com>",
+  "message_id": "msg1@example.com",
   "saved": [
     "foto.jpg",
     "doc.pdf"
@@ -428,7 +428,7 @@ file names. Text: `saved to <dest>:` plus `- name` lines, or `no attachments.`
 }
 ```
 
-#### mail draft / compose (T18)
+#### mail draft / compose
 
 Draft creates a **reply** draft for an existing message (Message-ID from
 `mail list`). Compose creates a **new** outgoing message draft (not a reply).
@@ -464,7 +464,7 @@ JSON compose: `{ "subject", "to", "cc" }`. Text:
   "attachments": [
     "/tmp/a.pdf"
   ],
-  "message_id": "<msg1@example.com>",
+  "message_id": "msg1@example.com",
   "status": "OK"
 }
 ```
@@ -492,11 +492,11 @@ JSON compose: `{ "subject", "to", "cc" }`. Text:
 
 | Verb | Status |
 |------|--------|
-| doctor | **done** (T21; full TCC report) |
-| --version / --help | **done** (T01) |
-| shell completions | **done** (T22; fish + zsh + bash) |
+| doctor |
+| --version / --help |
+| shell completions |
 
-#### Shell completions (T22)
+#### Shell completions
 
 ArgumentParser generates scripts via:
 
@@ -518,7 +518,7 @@ Covers every domain verb (`calendar`, `reminders`, `mail`, `notes`, `doctor`),
 global `--json`, and constrained values such as `--mailbox`, `--priority`,
 path/directory options for mail draft/compose/attachments.
 
-#### doctor (T21)
+#### doctor
 
 Runs **without** permission prompts. Reports backend wiring and authorization
 from injectable seams:
@@ -529,8 +529,8 @@ from injectable seams:
 | `ScriptRunner` | Apple Events runner wired (`osascript`) or stub |
 | `AutomationPermissionClient` | Mail + Notes **Automation** TCC via `AEDeterminePermissionToAutomateTarget` with `askUserIfNeeded: false` |
 
-Default production wiring: real EventKit (T06), real osascript (T13), real AE
-Automation probe (T21). Tests inject mocks so unit checks never require live TCC.
+Default production wiring: real EventKit , real osascript , real AE
+Automation probe . Tests inject mocks so unit checks never require live TCC.
 
 **EventKit gaps** (`missing` when not fully usable): denied, restricted,
 write-only, not determined. Messages point at
@@ -575,26 +575,26 @@ Exit 0 when the report is produced successfully (gaps go in `missing`, not exit
 code).
 
 Text mode includes EventKit and Apple Events lines plus `missing:` bullets.
-#### EventStoreClient (T06 / T07)
+#### EventStoreClient 
 
 - Protocol `EventStoreClient`: `authorizationStatus(for:)` (no prompt) and
   `requestAccess(for:)` (may prompt once when not determined).
 - `ensureAccess(for:)` (protocol extension): request if needed, then throw
   `MacverbsError.domain` with a clear System Settings path when access is
   denied, restricted, write-only, or still not granted.
-- Calendar data (T07): `eventCalendars()` and `events(from:to:)` (half-open
+- Calendar data : `eventCalendars()` and `events(from:to:)` (half-open
   range; recurring instances expanded by EventKit). DTOs:
   `EventKitCalendarInfo`, `EventKitEventInfo`.
-- Calendar create (T08): `saveEvent(title:start:end:calendarUID:)` (`nil` UID →
+- Calendar create : `saveEvent(title:start:end:calendarUID:)` (`nil` UID →
   store default calendar for new events).
-- Reminders mutations (T09–T11): `reminderLists`, `incompleteReminders`,
+- Reminders mutations: `reminderLists`, `incompleteReminders`,
   `addReminder`, `completeReminder`, `deleteReminder`, `moveReminder`,
   `editReminder`, `ensureReminderList` (mklist).
 - Production: `EKEventStoreClient` (`kind: eventkit`) wraps `EKEventStore` via
   injectable `EventKitBacking` (live store or test double).
 - Unit tests use `MockEventStoreClient` / fake backing; never require live TCC.
 
-#### ScriptRunner (T13)
+#### ScriptRunner
 
 - Protocol `ScriptRunner.run(script:timeout:)` returns osascript stdout.
 - Production: `OSAScriptRunner` → `/usr/bin/osascript -e …` (process launch is
