@@ -129,3 +129,22 @@ macverbs --json notes search "meeting"
 3. Treat domain exit `1` as user-fixable (missing list, denied access);
    exit `2` as backend/osascript failure.
 4. Do not invent account names; discover with `mail accounts` / `calendar calendars`.
+
+## FAQ
+
+### Why is human text in English?
+
+JSON keys and CLI surface are English so agents and docs stay stable across
+locales. Your **data** (event titles, mail subjects, list names) stays in
+whatever language the apps store. Exit codes and `error: …` on stderr are the
+machine contract; `--json` is preferred for scripts.
+
+### Does macverbs call the network?
+
+Core verbs talk only to **local** EventKit and Apple Events (Mail/Notes apps).
+No Graph/Gmail HTTP API. See [SECURITY.md](../SECURITY.md).
+
+### Linux CI does not build the app — is that a bug?
+
+No. Default GitHub CI is **format-only on Linux**. Full `swift build` + tests
+run on macOS (weekly workflow, `workflow_dispatch`, or PR label `ci-macos`).

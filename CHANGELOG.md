@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- FAQ in usage (English CLI text, no network, Linux CI scope).
+- Optional pre-push coverage gate (`git config macverbs.coveragePush true`).
+- Weekly macOS CI always uploads a coverage report artifact.
+- README demo session; GitHub Discussions + topics for discovery.
+
 ### Changed
 
 - Split monolithic tests into domain files; extract shared mocks to `TestMocks.swift`.
