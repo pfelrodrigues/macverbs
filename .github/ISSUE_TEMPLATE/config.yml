@@ -3,6 +3,9 @@ contact_links:
   - name: Security vulnerability
     url: https://github.com/pfelrodrigues/macverbs/security/advisories/new
     about: Private report — do not open a public issue for security bugs.
-  - name: Usage questions
+  - name: Discussions (Q&A)
+    url: https://github.com/pfelrodrigues/macverbs/discussions
+    about: Questions and ideas that are not bug reports.
+  - name: Usage guide
     url: https://github.com/pfelrodrigues/macverbs/blob/main/docs/usage.md
     about: Recipes and first-run guide before filing an issue.

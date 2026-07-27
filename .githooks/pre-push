@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Optional coverage gate on push. Off by default.
+# Enable:  git config macverbs.coveragePush 1
+# Disable: git config --unset macverbs.coveragePush
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+enabled="$(git config --bool macverbs.coveragePush 2>/dev/null || echo false)"
+if [[ "$enabled" != "true" ]]; then
+  exit 0
+fi
+
+if ! command -v swift >/dev/null 2>&1; then
+  echo "pre-push: swift not found; skip coverage gate" >&2
+  exit 0
+fi
+
+echo "pre-push: mise run check-coverage (macverbs.coveragePush=true)"
+if command -v mise >/dev/null 2>&1; then
+  mise run check-coverage
+else
+  COVERAGE_MIN="${COVERAGE_MIN:-97}" bash scripts/coverage.sh
+fi

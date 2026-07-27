@@ -19,6 +19,30 @@ macverbs calendar list --days 2
 # → - Standup | 2026-08-01 at 10:00 - 10:30 | Work
 ```
 
+### Demo session
+
+```text
+$ macverbs --version
+0.1.1
+
+$ macverbs doctor
+macverbs doctor 0.1.1
+EventKit: eventkit (calendar=fullAccess, reminders=fullAccess)
+Apple Events: osascript (wired=true, mail=authorized, notes=authorized)
+ok: nothing missing
+
+$ macverbs --json calendar list --days 1
+[
+  {
+    "calendar" : "Work",
+    "title" : "Standup",
+    "when" : "2026-08-01 at 10:00 - 10:30"
+  }
+]
+```
+
+Questions and ideas: [GitHub Discussions](https://github.com/pfelrodrigues/macverbs/discussions). Bugs: [Issues](https://github.com/pfelrodrigues/macverbs/issues).
+
 ## Why
 
 - **Honest results** — no silent no-ops (e.g. Gmail “archive” is refused, not faked)
@@ -161,10 +185,10 @@ Layout: library **`MacverbsCore`** + thin executable **`macverbs`**. Tests impor
 
 | Workflow | When | What |
 |----------|------|------|
-| [CI](.github/workflows/ci.yml) | push/PR → `main` | Linux **`swift format` only** (product is macOS-only) |
-| [macOS check](.github/workflows/macos-check.yml) | weekly, `workflow_dispatch`, or PR label **`ci-macos`** | format + build + test on macOS |
+| [CI](.github/workflows/ci.yml) | push/PR → `main` | Linux **`swift format` only** (product is macOS-only; no EventKit on Linux) |
+| [macOS check](.github/workflows/macos-check.yml) | **weekly** (+ coverage artifact), `workflow_dispatch`, or PR label **`ci-macos`** | format + build + test on macOS |
 
-Local Mac remains the primary gate (`mise run check`).
+Local Mac remains the primary gate (`mise run check`). Optional local coverage on push: `git config macverbs.coveragePush true`.
 
 ## Security
 

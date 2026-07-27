@@ -88,10 +88,18 @@ The `commit-msg` git hook rejects non-conforming subjects (merge commits are all
 
 ### Coverage
 
-- Prefer keeping **Sources/macverbs** line coverage high (`mise run coverage` / `check-coverage`).
+- Prefer keeping **MacverbsCore** line coverage high (`mise run coverage` / `check-coverage`).
 - Default gate: **97%** lines (see `scripts/coverage.sh`, `COVERAGE_MIN`).
 - Residual ~2–3% is expected: live EventKit/osascript failure branches and process
-  entry (`Main.main`). Do not chase 100% with brittle live-only tests on CI.
+  entry (`Entry.main`). Do not chase 100% with brittle live-only tests on CI.
+- Optional **pre-push** coverage gate (off by default):
+
+  ```bash
+  git config macverbs.coveragePush true    # enable
+  git config --unset macverbs.coveragePush # disable
+  ```
+
+  Weekly GitHub **macOS check** also uploads a coverage report artifact.
 
 ### Live / dogfood tests
 
