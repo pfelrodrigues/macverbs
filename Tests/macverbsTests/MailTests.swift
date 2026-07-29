@@ -22,7 +22,9 @@ import Testing
     #expect(s.contains("tell application \"Mail\""))
     #expect(s.contains("repeat with acct in accounts"))
     #expect(s.contains("unread count of mb"))
-    #expect(s.contains("if u > 0 then"))
+    // Every account is emitted, including unread 0 (issue #17).
+    #expect(s.contains("set output to output & (name of acct) & fs & (u as text) & rs"))
+    #expect(!s.contains("if u > 0 then"))
 }
 
 @Test func mailAccountsParsesRecords() throws {
@@ -89,6 +91,12 @@ import Testing
     #expect(Mail.formatUnread([]) == "no unread.")
     let text = Mail.formatUnread([MailUnreadCount(account: "Work", unread: 3)])
     #expect(text == "- Work: 3 unread")
+    let withZero = Mail.formatUnread([
+        MailUnreadCount(account: "Work", unread: 0),
+        MailUnreadCount(account: "Personal", unread: 2),
+    ])
+    #expect(withZero.contains("Work: 0 unread"))
+    #expect(withZero.contains("Personal: 2 unread"))
 }
 
 @Test func mailAccountsCommandJsonOnStdout() throws {
@@ -503,6 +511,10 @@ import Testing
     #expect(s.contains("repeat with m in matches"))
     #expect(s.contains("move m to tb"))
     #expect(s.contains("delay 1"))
+    // Single-pass verification over inbox (issue #16), not one scan per id.
+    #expect(s.contains("set allMsgs to every message of ib"))
+    #expect(s.contains("if mid is (contents of rid) then"))
+    #expect(!s.contains("count of (messages of ib whose message id is ms)"))
 }
 
 @Test func mailScriptsMoveArchiveHasGmailGuard() {

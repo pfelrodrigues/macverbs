@@ -117,6 +117,11 @@ enum MailScripts {
     ///
     /// Emits `requested{FS}moved{FS}remaining`. On Gmail archive (All Mail), emits
     /// `__ARCHIVE_UNSUPPORTED__{FS}{boxName}` without moving.
+    ///
+    /// Verification is a **single pass** over inbox messages (intersect with the
+    /// requested id set), not one full mailbox scan per id. The old O(ids × inbox)
+    /// recount could exceed the 30s osascript timeout after a successful move
+    /// (issue #16), reporting exit 2 even though messages had already left the inbox.
     static func move(account: String, ids: [String], target: MailMoveTarget) -> String {
         let a = AppleScript.escape(account)
         let boxes = destinationBoxNames(for: target)
@@ -148,11 +153,15 @@ enum MailScripts {
                         end repeat
                         delay 1
                         set remaining to 0
-                        repeat with mid in idList
-                            set ms to (contents of mid)
-                            try
-                                set remaining to remaining + (count of (messages of ib whose message id is ms))
-                            end try
+                        set allMsgs to every message of ib
+                        repeat with m in allMsgs
+                            set mid to message id of m
+                            repeat with rid in idList
+                                if mid is (contents of rid) then
+                                    set remaining to remaining + 1
+                                    exit repeat
+                                end if
+                            end repeat
                         end repeat
                         set reqCount to (count of idList)
                         return (reqCount as text) & fs & ((reqCount - remaining) as text) & fs & (remaining as text)
@@ -181,7 +190,10 @@ enum MailScripts {
             """
     }
 
-    /// Unread count per account (sum of mailbox unread counts); only u > 0.
+    /// Unread count per account (sum of mailbox unread counts), including zero.
+    ///
+    /// Every configured account is emitted so callers can distinguish "0 unread"
+    /// from "account missing" or an empty result (issue #17).
     static func unread() -> String {
         separatorsHeader
             + """
@@ -192,7 +204,7 @@ enum MailScripts {
                     repeat with mb in mailboxes of acct
                         set u to u + (unread count of mb)
                     end repeat
-                    if u > 0 then set output to output & (name of acct) & fs & (u as text) & rs
+                    set output to output & (name of acct) & fs & (u as text) & rs
                 end repeat
                 return output
             end tell
