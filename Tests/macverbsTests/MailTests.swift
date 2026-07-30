@@ -22,9 +22,17 @@ import Testing
     #expect(s.contains("tell application \"Mail\""))
     #expect(s.contains("repeat with acct in accounts"))
     #expect(s.contains("unread count of mb"))
-    // Every account is emitted, including unread 0 (issue #17).
     #expect(s.contains("set output to output & (name of acct) & fs & (u as text) & rs"))
+}
+
+/// Regression #17: fully-read accounts must appear as `unread: 0`, not be dropped.
+/// Empty JSON must mean "no accounts", never "all inboxes are clean".
+@Test func mailScriptsUnreadNeverFiltersZeroAccounts() {
+    let s = MailScripts.unread()
     #expect(!s.contains("if u > 0 then"))
+    #expect(!s.contains("if u > 0"))
+    // Row is appended unconditionally after summing mailboxes.
+    #expect(s.contains("set output to output & (name of acct) & fs & (u as text) & rs"))
 }
 
 @Test func mailAccountsParsesRecords() throws {
@@ -77,6 +85,21 @@ import Testing
     let rs = AppleScript.recordSeparator
     let items = try Mail.unread(runner: MockScriptRunner(stdout: "Acme\(fs)\(rs)"))
     #expect(items == [MailUnreadCount(account: "Acme", unread: 0)])
+}
+
+/// Regression #17: mixed zero / non-zero rows stay in the parse result.
+@Test func mailUnreadParsesZeroAlongsidePositive() throws {
+    let fs = AppleScript.fieldSeparator
+    let rs = AppleScript.recordSeparator
+    let out = "Work\(fs)0\(rs)Personal\(fs)3\(rs)Acme\(fs)0\(rs)"
+    let items = try Mail.unread(runner: MockScriptRunner(stdout: out))
+    #expect(
+        items == [
+            MailUnreadCount(account: "Work", unread: 0),
+            MailUnreadCount(account: "Personal", unread: 3),
+            MailUnreadCount(account: "Acme", unread: 0),
+        ]
+    )
 }
 
 @Test func mailFormatAccountsText() {
@@ -146,6 +169,29 @@ import Testing
         #expect(arr?.count == 1)
         #expect(arr?[0]["account"] as? String == "Work")
         #expect(arr?[0]["unread"] as? Int == 5)
+        #expect(try pipes.readError().isEmpty)
+    }
+}
+
+/// Regression #17: CLI JSON keeps accounts with unread 0 (agents size inboxes from this).
+@Test func mailUnreadCommandJsonIncludesZeroAccounts() throws {
+    try withRedirectedStdio { pipes in
+        let fs = AppleScript.fieldSeparator
+        let rs = AppleScript.recordSeparator
+        BackendClients.scriptRunner = MockScriptRunner(
+            stdout: "Work\(fs)0\(rs)Personal\(fs)2\(rs)"
+        )
+        defer { BackendClients.resetDefaults() }
+
+        let code = MacverbsApp.run(arguments: ["--json", "mail", "unread"])
+        #expect(code == ExitCodes.success)
+        let text = try pipes.readOutput()
+        let arr = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [[String: Any]]
+        #expect(arr?.count == 2)
+        #expect(arr?[0]["account"] as? String == "Work")
+        #expect(arr?[0]["unread"] as? Int == 0)
+        #expect(arr?[1]["account"] as? String == "Personal")
+        #expect(arr?[1]["unread"] as? Int == 2)
         #expect(try pipes.readError().isEmpty)
     }
 }
@@ -511,10 +557,32 @@ import Testing
     #expect(s.contains("repeat with m in matches"))
     #expect(s.contains("move m to tb"))
     #expect(s.contains("delay 1"))
-    // Single-pass verification over inbox (issue #16), not one scan per id.
-    #expect(s.contains("set allMsgs to every message of ib"))
-    #expect(s.contains("if mid is (contents of rid) then"))
-    #expect(!s.contains("count of (messages of ib whose message id is ms)"))
+}
+
+/// Regression #16: post-move verify must be one inbox walk, not one full scan per id.
+/// The old loop timed out after a successful move on large inboxes (exit 2, messages gone).
+@Test func mailScriptsMoveVerifyIsSinglePassNotPerIdScan() {
+    let archive = MailScripts.move(
+        account: "Work",
+        ids: ["<a@x>", "<b@x>", "<c@x>"],
+        target: .archive
+    )
+    let delete = MailScripts.move(
+        account: "Personal",
+        ids: ["<d@x>"],
+        target: .delete
+    )
+    for s in [archive, delete] {
+        #expect(s.contains("set allMsgs to every message of ib"))
+        #expect(s.contains("if mid is (contents of rid) then"))
+        #expect(s.contains("set remaining to remaining + 1"))
+        // Old O(ids × inbox) pattern must not return.
+        #expect(!s.contains("count of (messages of ib whose message id is ms)"))
+        // Move phase may still use whose-by-id; verify block must not reintroduce per-id count.
+        let afterDelay = s.components(separatedBy: "delay 1").last ?? ""
+        #expect(afterDelay.contains("set allMsgs to every message of ib"))
+        #expect(!afterDelay.contains("whose message id is ms"))
+    }
 }
 
 @Test func mailScriptsMoveArchiveHasGmailGuard() {
