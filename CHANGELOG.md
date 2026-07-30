@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-29
+
 ### Fixed
 
 - **`mail unread`** now lists every configured account, including those with
@@ -68,7 +70,8 @@ breakage vs 0.1.1.
   for most paths.
 - GitHub Flow + Conventional Commits contributor docs.
 
-[Unreleased]: https://github.com/pfelrodrigues/macverbs/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/pfelrodrigues/macverbs/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/pfelrodrigues/macverbs/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/pfelrodrigues/macverbs/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/pfelrodrigues/macverbs/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/pfelrodrigues/macverbs/releases/tag/v0.1.0
