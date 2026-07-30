@@ -23,10 +23,10 @@ macverbs calendar list --days 2
 
 ```text
 $ macverbs --version
-0.1.2
+0.1.3
 
 $ macverbs doctor
-macverbs doctor 0.1.2
+macverbs doctor 0.1.3
 EventKit: eventkit (calendar=fullAccess, reminders=fullAccess)
 Apple Events: osascript (wired=true, mail=authorized, notes=authorized)
 ok: nothing missing
