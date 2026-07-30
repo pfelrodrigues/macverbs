@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`mail unread`** now lists every configured account, including those with
+  `unread: 0`. An empty array no longer means "all inboxes are fully read"
+  (that was ambiguous vs no accounts / partial failure). Closes #17.
+- **`mail archive` / `mail delete`** verification no longer re-scans the whole
+  inbox once per requested message-id (`O(ids × inbox)`). After the move it
+  walks the inbox once and intersects with the requested set, so large inboxes
+  no longer hit the 30s osascript timeout *after* a successful move (exit 2
+  with messages already gone). Closes #16.
+
 ## [0.1.2] - 2026-07-26
 
 Packaging and project maturity for OSS consumers. No intentional JSON contract

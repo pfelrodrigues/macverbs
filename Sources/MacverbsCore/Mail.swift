@@ -26,7 +26,7 @@ enum Mail {
             }
     }
 
-    /// Unread totals per account (accounts with zero unread are omitted by script).
+    /// Unread totals per account (includes accounts with zero unread).
     static func unread(
         runner: any ScriptRunner = BackendClients.scriptRunner,
         timeout: TimeInterval = defaultTimeout

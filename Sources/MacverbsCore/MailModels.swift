@@ -11,7 +11,7 @@ struct MailAccount: Codable, Equatable, Sendable {
     var email: String
 }
 
-/// Unread total for one account (`mail unread`). Only accounts with unread > 0.
+/// Unread total for one account (`mail unread`), including zero.
 struct MailUnreadCount: Codable, Equatable, Sendable {
     var account: String
     var unread: Int

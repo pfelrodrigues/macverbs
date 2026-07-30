@@ -306,17 +306,22 @@ JSON: array of `{ "name", "type", "email" }` (stable keys). Text:
 
 #### mail unread
 
-Per-account unread totals (sum of mailbox `unread count`). Accounts with zero
-unread are omitted by the script (documented parity).
+Per-account unread totals (sum of mailbox `unread count`). **Every configured
+account is listed**, including those with `unread: 0`, so callers can tell
+"fully read" apart from "account missing" or an empty result.
 
 JSON: array of `{ "account", "unread" }` with `unread` as integer. Text:
-`- account: N unread` (or `no unread.`).
+`- account: N unread` (or `no unread.` when there are no accounts).
 
 ```json
 [
   {
     "account": "Work",
     "unread": 5
+  },
+  {
+    "account": "Personal",
+    "unread": 0
   }
 ]
 ```
@@ -366,8 +371,10 @@ JSON: `{ "body": "…" }`. Text: the body string (or `(empty)` when blank).
 
 Move messages from the account inbox to archive (`archive`) or trash
 (`delete`), then **re-count** how many of the requested message-ids remain in
-the inbox (embedded verification; never trust a silent no-op). `--account` is
-**required**. At least one message-id argument is required.
+the inbox (embedded verification; never trust a silent no-op). Verification is
+a single pass over the inbox (intersect requested ids), not one mailbox scan
+per id. `--account` is **required**. At least one message-id argument is
+required.
 
 JSON: `{ "account", "action", "moved", "requested", "remaining" }` plus optional
 `"unsupported"` when archive is refused. Text: `account: moved/requested
